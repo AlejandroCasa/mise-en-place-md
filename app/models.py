@@ -115,3 +115,66 @@ class Recipe(BaseModel):
     gallery: List[GalleryPhoto] = Field(default_factory=list, description="Galería de fotos")
     created_at: str = Field(default="", description="Fecha de creación ISO")
     updated_at: str = Field(default="", description="Fecha de última modificación ISO")
+
+
+class WineSuggestionItem(BaseModel):
+    """Suggested wine summary returned from Vinum Pulse enology catalog."""
+
+    slug: str = Field(..., description="Unique wine slug in Vinum Pulse")
+    name: str = Field(..., description="Commercial wine label")
+    winery: str = Field(..., description="Producing winery")
+    appellation: str = Field(..., description="Protected Designation of Origin")
+    country: str = Field(..., description="Producing country")
+    wine_type: str = Field(..., description="Wine typology (Red, White, Sparkling, Fortified, Rose)")
+    vintage: int = Field(..., description="Harvest vintage year")
+    price_eur: float = Field(..., description="Reference bottle price in EUR")
+    serving_temp_c: float = Field(..., description="Recommended serving temperature in Celsius")
+    glass_type: str = Field(..., description="Recommended glassware")
+    tagline: str = Field(default="", description="Short sommelier hook")
+    vinum_url: str = Field(..., description="Deep link to wine detail in Vinum Pulse")
+
+
+class RecipeWineSuggestion(BaseModel):
+    """Mid-price wine pairing recommendation for a recipe based on dominant wine typology."""
+
+    recipe_slug: str = Field(..., description="Recipe slug")
+    recipe_title: str = Field(..., description="Recipe title")
+    dominant_wine_type: str = Field(..., description="Most matching or habitual wine type")
+    resolution_source: Literal["linked_dish", "sensory_profile", "tag_affinity", "fallback"] = (
+        Field(..., description="How the dominant wine type was determined")
+    )
+    median_price_eur: float = Field(..., description="Median EUR price for the dominant wine type")
+    mid_price_band_eur: tuple[float, float] = Field(
+        ..., description="P35-P65 mid-price EUR band used to select the recommended wine"
+    )
+    recommended_wine: WineSuggestionItem = Field(..., description="Primary mid-price wine match")
+    alternatives: List[WineSuggestionItem] = Field(
+        default_factory=list, description="Alternative mid-price wines of the same typology"
+    )
+    matched_keywords: List[str] = Field(
+        default_factory=list, description="Culinary tags/ingredients that drove typology inference"
+    )
+    rationale: str = Field(..., description="Human-readable sommelier rationale")
+
+
+class DishRecipeLinkRequest(BaseModel):
+    """Payload to bind a Vinum Pulse dish slug with a Mise en Place recipe slug."""
+
+    dish_slug: str = Field(..., min_length=1, description="Dish slug in enology.dishes")
+    recipe_slug: str = Field(..., min_length=1, description="Recipe slug in culinary.recipes")
+    is_primary: bool = Field(
+        default=True, description="Whether this recipe is the primary link for the dish"
+    )
+    match_source: Literal["manual", "curated", "tag_inferred"] = Field(default="manual")
+    confidence: float = Field(default=1.0, ge=0.0, le=1.0)
+
+
+class DishRecipeLinkResponse(BaseModel):
+    """Persisted dish-to-recipe bridge contract."""
+
+    dish_slug: str
+    recipe_slug: str
+    is_primary: bool
+    match_source: str
+    confidence: float
+

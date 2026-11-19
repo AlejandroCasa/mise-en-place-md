@@ -1,14 +1,24 @@
-# Entorno virtual de Python
+# Python environments
 .venv/
 venv/
 ENV/
 
-# Caché de Python
+# Python caches & quality gates
 __pycache__/
 *.py[cod]
 *$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
 
-# Archivos del sistema y editores
+# Local environment secrets & SQLite artifacts
+.env
+*.db
+*.sqlite3
+
+# OS & editor files
 .DS_Store
 Thumbs.db
 .vscode/
