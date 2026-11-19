@@ -1,0 +1,78 @@
+:root {
+  --bg-Stone: #f7f5f0;
+  --bg-Card: #ffffff;
+  --ink-Primary: #1c1917;
+  --ink-Secondary: #57534e;
+  --accent-Copper: #b45309;
+  --accent-Terracotta: #9a3412;
+  --accent-Sage: #3f6212;
+}
+
+body {
+  background-color: var(--bg-Stone);
+  color: var(--ink-Primary);
+  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+}
+
+.font-serif-title {
+  font-family: 'Playfair Display', Georgia, Cambria, serif;
+}
+
+.font-mono-tech {
+  font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, monospace;
+}
+
+/* Scrollbar sutil */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #ede9e0;
+}
+::-webkit-scrollbar-thumb {
+  background: #c7c0b3;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #a89f91;
+}
+
+/* Badges de utensilios */
+.badge-mandatory {
+  border: 1.5px solid #9a3412;
+  background-color: #fff7ed;
+  color: #7c2d12;
+}
+
+.badge-optional {
+  border: 1.5px dashed #78716c;
+  background-color: #fafaf9;
+  color: #44403c;
+}
+
+/* Modo cocina (letras más grandes y alto contraste) */
+body.kitchen-mode .recipe-step-text {
+  font-size: 1.25rem;
+  line-height: 1.85rem;
+}
+
+body.kitchen-mode .ingredient-row-text {
+  font-size: 1.125rem;
+}
+
+/* Impresión de ficha técnica de cocina */
+@media print {
+  .no-print {
+    display: none !important;
+  }
+  body {
+    background: #fff !important;
+  }
+  .print-full {
+    width: 100% !important;
+    max-width: 100% !important;
+    box-shadow: none !important;
+    border: none !important;
+  }
+}

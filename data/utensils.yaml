@@ -1,0 +1,70 @@
+- id: cuchillo-cebollero-21
+  name: Cuchillo de Chef / Cebollero 21cm
+  category: Corte y Preparación
+  owned: true
+  specs: Hoja forjada afilada a 15°
+- id: bascula-precision
+  name: Báscula de Precisión (0.1g)
+  category: Precisión y Medición
+  owned: true
+  specs: Capacidad 3kg, resolución 0.1g para hidrocoloides, sal y levaduras
+- id: sonda-termometro
+  name: Termómetro Sonda Digital de Lectura Instantánea
+  category: Precisión y Medición
+  owned: true
+  specs: Rango -50°C a 300°C, aguja fina
+- id: cocotte-hierro-26
+  name: Cocotte / Olla de Hierro Fundido Esmaltado (26cm)
+  category: Cocción
+  owned: true
+  specs: Alta inercia térmica, apta para horno a 260°C
+- id: sarten-acero-mineral
+  name: Sartén de Acero al Carbono / Hierro Mineral
+  category: Cocción
+  owned: true
+  specs: 28cm curada para reacciones de Maillard intensas
+- id: roner-sous-vide
+  name: Circulador de Inmersión (Roner / Sous-Vide)
+  category: Vanguardia
+  owned: true
+  specs: Estabilidad ±0.05°C hasta 95°C
+- id: envasadora-vacio
+  name: Envasadora al Vacío
+  category: Conservación
+  owned: true
+  specs: Sellado doble para bolsas de cocción y marinados
+- id: sifon-espumas
+  name: Sifón de Espumas (0.5L)
+  category: Vanguardia
+  owned: true
+  specs: Cabezal de acero inoxidable, apto baño maría hasta 75°C
+- id: chino-estamena
+  name: Colador Chino + Estameña de Algodón
+  category: Corte y Preparación
+  owned: true
+  specs: Malla extrafina para clarificar fondos y aceites
+- id: banneton-fermentacion
+  name: Banneton de Ratán (25cm)
+  category: Panadería y Repostería
+  owned: true
+  specs: Con tela de lino para fermentación en bloque/formado
+- id: rasqueta-panadero
+  name: Rasqueta Trapezoidal y Cuchilla Lame
+  category: Panadería y Repostería
+  owned: true
+  specs: Acero inoxidable y hoja curva para greñado
+- id: soplete-cocina
+  name: Soplete de Cocina de Llama Directa
+  category: Cocción
+  owned: true
+  specs: Para acabados, lacados y tostado puntual
+- id: robot-triturador-potente
+  name: Robot Termomix / Batidora de Vaso de Alta Potencia
+  category: Corte y Preparación
+  owned: true
+  specs: Emulsiones a 70°C y purés sedosos sin fibra
+- id: ahumador-frio
+  name: Pipa de Ahumado en Frío
+  category: Vanguardia
+  owned: false
+  specs: Viruta de haya o roble bajo campana

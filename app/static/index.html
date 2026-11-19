@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Atelier Culinario — Recetario Técnico & I+D</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Playfair+Display:ital,wght@0,600;0,700;1,400&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="min-h-screen flex flex-col selection:bg-amber-200 selection:text-stone-900">
+
+  <!-- Barra Superior -->
+  <header class="no-print bg-stone-900 text-stone-100 border-b border-stone-800 sticky top-0 z-30">
+    <div class="max-w-[1600px] mx-auto px-4 sm:px-6 h-16 flex items-center justify-between gap-4">
+      <div class="flex items-center gap-3">
+        <div class="w-9 h-9 rounded-lg bg-amber-700/90 flex items-center justify-center text-amber-100 font-serif-title font-bold text-lg shadow-inner">
+          A
+        </div>
+        <div>
+          <h1 class="font-serif-title text-lg sm:text-xl font-bold tracking-tight text-stone-50 flex items-center gap-2">
+            Atelier Culinario
+            <span class="text-[11px] font-mono-tech uppercase tracking-widest px-2 py-0.5 rounded bg-stone-800 text-amber-400 border border-stone-700">
+              MD + YAML
+            </span>
+          </h1>
+          <p class="text-xs text-stone-400 hidden sm:block">Cuaderno técnico de recetas, escandallos de precisión, sub-recetas e inventario de utensilios</p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 sm:gap-3">
+        <!-- Botón Modo Cocina -->
+        <button id="btn-kitchen-mode" onclick="toggleKitchenMode()"
+          class="px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-700 bg-stone-800/80 text-stone-300 hover:bg-stone-700 hover:text-white transition flex items-center gap-1.5"
+          title="Aumenta el tamaño de fuente y mantiene la pantalla activa mientras cocinas">
+          <span>🔥</span>
+          <span class="hidden md:inline">Modo Cocina</span>
+        </button>
+
+        <!-- Botón Mi Inventario de Utensilios -->
+        <button onclick="openUtensilsModal()"
+          class="px-3 py-1.5 rounded-lg text-xs font-medium border border-stone-700 bg-stone-800 text-amber-300 hover:bg-stone-700 transition flex items-center gap-1.5">
+          <span>🔪</span>
+          <span>Mi Equipo (<span id="header-utensil-count">0/0</span>)</span>
+        </button>
+
+        <!-- Botón Nueva Receta -->
+        <button onclick="openRecipeEditor(null)"
+          class="px-3.5 py-1.5 rounded-lg text-xs sm:text-sm font-semibold bg-amber-600 hover:bg-amber-500 text-white shadow transition flex items-center gap-1.5">
+          <span>＋</span>
+          <span>Nueva Receta</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Contenedor Principal -->
+  <div class="max-w-[1600px] w-full mx-auto flex-1 grid grid-cols-1 lg:grid-cols-12 gap-0 lg:gap-6 px-0 lg:px-6 py-0 lg:py-6">
+
+    <!-- Panel Izquierdo: Buscador, Filtros Avanzados y Lista de Recetas -->
+    <aside class="no-print lg:col-span-4 xl:col-span-4 flex flex-col bg-stone-100/90 lg:bg-white lg:rounded-xl lg:border lg:border-stone-200/90 lg:shadow-sm overflow-hidden">
+      
+      <!-- Buscador y Filtros -->
+      <div class="p-4 border-b border-stone-200 bg-stone-50/70 space-y-3">
+        <!-- Búsqueda general -->
+        <div class="relative">
+          <input id="filter-search" type="text" placeholder="Buscar por plato, técnica, nota o etiqueta..."
+            oninput="applyFilters()"
+            class="w-full pl-9 pr-8 py-2 text-sm bg-white border border-stone-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-600 focus:border-transparent" />
+          <span class="absolute left-3 top-2.5 text-stone-400 text-sm">🔍</span>
+          <button onclick="resetAllFilters()" title="Limpiar todos los filtros"
+            class="absolute right-2.5 top-2 text-xs text-stone-400 hover:text-stone-700 px-1 py-0.5">
+            ✕
+          </button>
+        </div>
+
+        <!-- Toggle: ¿Qué puedo cocinar con mi inventario actual? -->
+        <div class="flex items-center justify-between gap-2 bg-amber-50/80 border border-amber-200/80 rounded-lg px-3 py-2">
+          <label for="filter-cookable-today" class="text-xs font-medium text-stone-800 cursor-pointer select-none flex items-center gap-2">
+            <span>✅</span>
+            <span>Solo recetas con mis <strong>utensilios obligatorios</strong> disponibles</span>
+          </label>
+          <input id="filter-cookable-today" type="checkbox" onchange="applyFilters()"
+            class="w-4 h-4 accent-amber-700 rounded cursor-pointer" />
+        </div>
+
+        <!-- Desplegable de Filtros Avanzados (Ingredientes, Utensilios, Categorías, Orden) -->
+        <details id="advanced-filters-box" class="group bg-white border border-stone-200 rounded-lg">
+          <summary class="px-3 py-2 text-xs font-semibold text-stone-700 cursor-pointer flex items-center justify-between select-none">
+            <span>⚙️ Filtros avanzados (Ingredientes, Utensilios, Técnica y Orden)</span>
+            <span class="text-stone-400 group-open:rotate-180 transition-transform">▼</span>
+          </summary>
+          <div class="p-3 pt-2 border-t border-stone-100 space-y-2.5 text-xs">
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-medium text-stone-500 mb-1">Con ingredientes (sep. por coma)</label>
+                <input id="filter-ing-include" type="text" placeholder="ej. carrillera, harina"
+                  oninput="applyFilters()"
+                  class="w-full px-2.5 py-1.5 border border-stone-300 rounded-md focus:outline-none focus:border-amber-600" />
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-stone-500 mb-1">Excluir ingredientes</label>
+                <input id="filter-ing-exclude" type="text" placeholder="ej. lactosa, cerdo"
+                  oninput="applyFilters()"
+                  class="w-full px-2.5 py-1.5 border border-stone-300 rounded-md focus:outline-none focus:border-red-600" />
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-medium text-stone-500 mb-1">Categoría</label>
+                <select id="filter-category" onchange="applyFilters()"
+                  class="w-full px-2 py-1.5 border border-stone-300 rounded-md bg-white">
+                  <option value="">Todas las categorías</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-stone-500 mb-1">Tipo de Ficha</label>
+                <select id="filter-subrecipe" onchange="applyFilters()"
+                  class="w-full px-2 py-1.5 border border-stone-300 rounded-md bg-white">
+                  <option value="all">Todas (Platos + Bases)</option>
+                  <option value="main">Solo Platos Finales</option>
+                  <option value="sub">Solo Sub-recetas / Bases</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2">
+              <div>
+                <label class="block text-[11px] font-medium text-stone-500 mb-1">Utensilio en la receta</label>
+                <select id="filter-utensil" onchange="applyFilters()"
+                  class="w-full px-2 py-1.5 border border-stone-300 rounded-md bg-white">
+                  <option value="">Cualquier utensilio</option>
+                </select>
+              </div>
+              <div>
+                <label class="block text-[11px] font-medium text-stone-500 mb-1">Técnica culinaria</label>
+                <select id="filter-technique" onchange="applyFilters()"
+                  class="w-full px-2 py-1.5 border border-stone-300 rounded-md bg-white">
+                  <option value="">Todas las técnicas</option>
+                </select>
+              </div>
+            </div>
+          </div>
+        </details>
+
+        <!-- Barra de Ordenación y Contador -->
+        <div class="flex items-center justify-between gap-2 pt-1 text-xs text-stone-600">
+          <span id="recipe-count-label" class="font-mono-tech text-[11px] text-stone-500">0 recetas</span>
+          <div class="flex items-center gap-1.5">
+            <label for="sort-by" class="text-[11px] text-stone-500">Ordenar:</label>
+            <select id="sort-by" onchange="applyFilters()"
+              class="px-2 py-1 text-xs border border-stone-300 rounded-md bg-white font-medium text-stone-700">
+              <option value="updated_desc">Recientes primero</option>
+              <option value="rating_desc">Mayor valoración (★)</option>
+              <option value="difficulty_asc">Dificultad (Menor → Mayor)</option>
+              <option value="difficulty_desc">Dificultad (Mayor → Menor)</option>
+              <option value="active_time_asc">Tiempo activo (Prep+Cocción)</option>
+              <option value="total_time_asc">Tiempo total (incl. reposo)</option>
+              <option value="title_asc">Alfabético (A → Z)</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <!-- Lista de Recetas -->
+      <div id="recipe-list-container" class="divide-y divide-stone-200/80 overflow-y-auto max-h-[calc(100vh-290px)]">
+        <!-- Renderizado por JS -->
+      </div>
+    </aside>
+
+    <!-- Panel Derecho: Vista Detalle de la Receta / Editor -->
+    <main class="lg:col-span-8 xl:col-span-8 print-full">
+      <div id="recipe-detail-container" class="bg-white lg:rounded-xl lg:border lg:border-stone-200/90 lg:shadow-sm min-h-[75vh]">
+        <!-- Renderizado dinámico por JS -->
+      </div>
+    </main>
+
+  </div>
+
+  <!-- Dock Flotante de Temporizadores Activos -->
+  <div id="timers-dock" class="no-print fixed bottom-4 right-4 z-40 flex flex-col gap-2 max-w-sm w-full pointer-events-none"></div>
+
+  <!-- Modal: Gestor de Inventario Maestro de Utensilios -->
+  <div id="utensils-modal" class="no-print fixed inset-0 z-50 hidden bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-stone-200 max-w-3xl w-full max-h-[88vh] flex flex-col overflow-hidden">
+      <div class="px-6 py-4 bg-stone-900 text-stone-100 flex items-center justify-between">
+        <div>
+          <h2 class="font-serif-title text-lg font-bold">Inventario Maestro de Utensilios y Equipamiento</h2>
+          <p class="text-xs text-stone-400">Marca qué equipo tienes en tu cocina para filtrar recetas y asignarlo como Obligatorio u Opcional.</p>
+        </div>
+        <button onclick="closeUtensilsModal()" class="text-stone-400 hover:text-white text-xl leading-none px-2">✕</button>
+      </div>
+
+      <!-- Formulario para añadir nuevo utensilio al catálogo -->
+      <div class="p-4 bg-stone-50 border-b border-stone-200">
+        <div class="grid grid-cols-1 sm:grid-cols-12 gap-2 items-end">
+          <div class="sm:col-span-4">
+            <label class="block text-[11px] font-semibold text-stone-600 mb-1">Nombre del utensilio</label>
+            <input id="new-utensil-name" type="text" placeholder="Ej. Deshidratador, Mandolina japonesa..."
+              class="w-full px-3 py-1.5 text-xs border border-stone-300 rounded-lg bg-white" />
+          </div>
+          <div class="sm:col-span-3">
+            <label class="block text-[11px] font-semibold text-stone-600 mb-1">Categoría</label>
+            <select id="new-utensil-category" class="w-full px-2.5 py-1.5 text-xs border border-stone-300 rounded-lg bg-white">
+              <option value="Cocción">Cocción</option>
+              <option value="Corte y Preparación">Corte y Preparación</option>
+              <option value="Precisión y Medición">Precisión y Medición</option>
+              <option value="Panadería y Repostería">Panadería y Repostería</option>
+              <option value="Vanguardia">Vanguardia</option>
+              <option value="Conservación">Conservación</option>
+            </select>
+          </div>
+          <div class="sm:col-span-3">
+            <label class="block text-[11px] font-semibold text-stone-600 mb-1">Especificaciones / Modelo</label>
+            <input id="new-utensil-specs" type="text" placeholder="Ej. Hoja cerámica, 0-90°C..."
+              class="w-full px-3 py-1.5 text-xs border border-stone-300 rounded-lg bg-white" />
+          </div>
+          <div class="sm:col-span-2">
+            <button onclick="addNewCatalogUtensil()"
+              class="w-full py-1.5 px-3 bg-amber-700 hover:bg-amber-600 text-white font-semibold text-xs rounded-lg transition">
+              ＋ Añadir
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div id="utensils-catalog-list" class="p-5 overflow-y-auto space-y-4 flex-1">
+        <!-- Renderizado por JS -->
+      </div>
+
+      <div class="px-6 py-3 bg-stone-50 border-t border-stone-200 flex items-center justify-between text-xs text-stone-500">
+        <span>Guardado automáticamente en <code class="font-mono-tech text-stone-700">data/utensils.yaml</code></span>
+        <button onclick="closeUtensilsModal()" class="px-4 py-1.5 bg-stone-800 text-white rounded-lg font-medium hover:bg-stone-700">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Visor / Editor directo del archivo Markdown (.md + YAML) -->
+  <div id="markdown-modal" class="no-print fixed inset-0 z-50 hidden bg-stone-950/60 backdrop-blur-xs flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl shadow-2xl border border-stone-200 max-w-4xl w-full max-h-[90vh] flex flex-col overflow-hidden">
+      <div class="px-6 py-4 bg-stone-900 text-stone-100 flex items-center justify-between">
+        <div>
+          <h2 class="font-serif-title text-lg font-bold flex items-center gap-2">
+            <span>📄 Archivo Fuente Markdown + YAML Frontmatter</span>
+            <span id="md-modal-filename" class="text-xs font-mono-tech text-amber-400 bg-stone-800 px-2 py-0.5 rounded"></span>
+          </h2>
+          <p class="text-xs text-stone-400">Puedes editar directamente el código YAML/Markdown aquí o en Obsidian/VS Code.</p>
+        </div>
+        <button onclick="closeMarkdownModal()" class="text-stone-400 hover:text-white text-xl leading-none px-2">✕</button>
+      </div>
+      <div class="p-4 flex-1 flex flex-col bg-stone-950">
+        <textarea id="raw-markdown-textarea" spellcheck="false"
+          class="w-full flex-1 min-h-[460px] bg-stone-950 text-stone-100 font-mono-tech text-xs leading-relaxed p-3 focus:outline-none resize-none"></textarea>
+      </div>
+      <div class="px-6 py-3 bg-stone-100 border-t border-stone-200 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-2">
+          <button onclick="downloadRawMarkdown()" class="px-3 py-1.5 text-xs font-medium bg-white border border-stone-300 rounded-lg hover:bg-stone-50">
+            ⬇ Descargar .md
+          </button>
+          <button onclick="copyRawMarkdown()" class="px-3 py-1.5 text-xs font-medium bg-white border border-stone-300 rounded-lg hover:bg-stone-50">
+            📋 Copiar al portapapeles
+          </button>
+        </div>
+        <div class="flex items-center gap-2">
+          <button onclick="closeMarkdownModal()" class="px-4 py-1.5 text-xs font-medium text-stone-600 hover:text-stone-900">
+            Cancelar
+          </button>
+          <button onclick="saveRawMarkdownChanges()" class="px-4 py-1.5 text-xs font-semibold bg-amber-700 hover:bg-amber-600 text-white rounded-lg">
+            Guardar cambios en .md
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
