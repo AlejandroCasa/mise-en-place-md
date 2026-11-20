@@ -1,23 +1,16 @@
 from __future__ import annotations
-import os
+
 import re
 import unicodedata
 from datetime import datetime
 from pathlib import Path
-from typing import List, Optional, Tuple
+
 import yaml
 
 from app.models import (
+    Ingredient,
     Recipe,
     UtensilCatalogItem,
-    Ingredient,
-    RecipeUtensil,
-    RecipeStep,
-    Timings,
-    TemperaturePoint,
-    SubRecipeLink,
-    IterationEntry,
-    GalleryPhoto,
 )
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -50,7 +43,7 @@ def render_recipe_markdown(recipe: Recipe) -> str:
         width=100,
     ).strip()
 
-    lines: List[str] = [
+    lines: list[str] = [
         "---",
         frontmatter_str,
         "---",
@@ -104,7 +97,7 @@ def render_recipe_markdown(recipe: Recipe) -> str:
     # Ingredientes
     if recipe.ingredients:
         lines.append("## Ingredientes")
-        groups = {}
+        groups: dict[str, list[Ingredient]] = {}
         for ing in recipe.ingredients:
             groups.setdefault(ing.group or "Principal", []).append(ing)
         for grp_name, items in groups.items():
@@ -165,7 +158,7 @@ def render_recipe_markdown(recipe: Recipe) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def parse_recipe_markdown(filepath: Path) -> Optional[Recipe]:
+def parse_recipe_markdown(filepath: Path) -> Recipe | None:
     """Lee un archivo .md con YAML Frontmatter y devuelve un objeto Recipe validado."""
     if not filepath.exists():
         return None
@@ -195,9 +188,9 @@ def parse_recipe_markdown(filepath: Path) -> Optional[Recipe]:
     return Recipe.model_validate(data)
 
 
-def list_recipes() -> List[Recipe]:
+def list_recipes() -> list[Recipe]:
     ensure_directories()
-    recipes: List[Recipe] = []
+    recipes: list[Recipe] = []
     for path in sorted(RECIPES_DIR.glob("*.md")):
         recipe = parse_recipe_markdown(path)
         if recipe:
@@ -205,13 +198,13 @@ def list_recipes() -> List[Recipe]:
     return recipes
 
 
-def get_recipe(recipe_id: str) -> Optional[Recipe]:
+def get_recipe(recipe_id: str) -> Recipe | None:
     ensure_directories()
     path = RECIPES_DIR / f"{recipe_id}.md"
     return parse_recipe_markdown(path)
 
 
-def save_recipe(recipe: Recipe, previous_id: Optional[str] = None) -> Recipe:
+def save_recipe(recipe: Recipe, previous_id: str | None = None) -> Recipe:
     ensure_directories()
     now_iso = datetime.now().strftime("%Y-%m-%d %H:%M")
     if not recipe.id:
@@ -251,7 +244,7 @@ def delete_recipe(recipe_id: str) -> bool:
     return False
 
 
-def load_utensils() -> List[UtensilCatalogItem]:
+def load_utensils() -> list[UtensilCatalogItem]:
     ensure_directories()
     if not UTENSILS_FILE.exists():
         return []
@@ -259,7 +252,7 @@ def load_utensils() -> List[UtensilCatalogItem]:
     return [UtensilCatalogItem.model_validate(item) for item in raw]
 
 
-def save_utensils(items: List[UtensilCatalogItem]) -> List[UtensilCatalogItem]:
+def save_utensils(items: list[UtensilCatalogItem]) -> list[UtensilCatalogItem]:
     ensure_directories()
     for item in items:
         if not item.id:

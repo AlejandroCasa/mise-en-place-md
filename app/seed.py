@@ -1,21 +1,22 @@
 from __future__ import annotations
+
 from app.models import (
-    Recipe,
-    UtensilCatalogItem,
-    RecipeUtensil,
     Ingredient,
-    Timings,
-    TemperaturePoint,
-    SubRecipeLink,
     IterationEntry,
+    Recipe,
     RecipeStep,
+    RecipeUtensil,
+    SubRecipeLink,
+    TemperaturePoint,
+    Timings,
+    UtensilCatalogItem,
 )
 from app.storage import (
-    UTENSILS_FILE,
     RECIPES_DIR,
-    save_utensils,
-    save_recipe,
+    UTENSILS_FILE,
     ensure_directories,
+    save_recipe,
+    save_utensils,
 )
 
 
@@ -141,7 +142,12 @@ def seed_initial_data() -> None:
         servings=1500,
         yield_unit="ml",
         scaling_mode="servings",
-        techniques=["Tostado Maillard", "Extracción lenta", "Desglasado", "Decantación y clarificado"],
+        techniques=[
+            "Tostado Maillard",
+            "Extracción lenta",
+            "Desglasado",
+            "Decantación y clarificado",
+        ],
         tags=["fondo", "base", "colágeno", "carnes", "arroz"],
         timings=Timings(
             prep_minutes=35,
@@ -150,9 +156,19 @@ def seed_initial_data() -> None:
             rest_notes="12h en cámara a 3°C para solidificar la capa grasa superior y desgrasar en frío",
         ),
         temperatures=[
-            TemperaturePoint(stage="Horno (Tostado de huesos)", temp_c=210, notes="Convección seca hasta dorado caoba"),
-            TemperaturePoint(stage="Hervor de extracción (Simmer)", temp_c=92, notes="Fremissement: burbuja mínima constante sin ebullición violenta"),
-            TemperaturePoint(stage="Abatimiento / Reposo", temp_c=3, notes="Desgrasado en bloque sólido"),
+            TemperaturePoint(
+                stage="Horno (Tostado de huesos)",
+                temp_c=210,
+                notes="Convección seca hasta dorado caoba",
+            ),
+            TemperaturePoint(
+                stage="Hervor de extracción (Simmer)",
+                temp_c=92,
+                notes="Fremissement: burbuja mínima constante sin ebullición violenta",
+            ),
+            TemperaturePoint(
+                stage="Abatimiento / Reposo", temp_c=3, notes="Desgrasado en bloque sólido"
+            ),
         ],
         utensils=[
             RecipeUtensil(
@@ -175,17 +191,84 @@ def seed_initial_data() -> None:
             ),
         ],
         ingredients=[
-            Ingredient(name="Huesos de rodilla y caña de ternera", amount=1800, unit="g", group="Base Ósea y Cárnica", is_base_weight=True, notes="Cortados a 5 cm para exponer colágeno"),
-            Ingredient(name="Recortes de morcillo / jarrete de ternera", amount=700, unit="g", group="Base Ósea y Cárnica", notes="Aportan sabor cárnico y gelatina"),
-            Ingredient(name="Manita de ternera o cerdo blanqueada", amount=250, unit="g", group="Base Ósea y Cárnica", notes="Clave para textura sedosa al reducir"),
-            Ingredient(name="Cebolla dulce", amount=350, unit="g", group="Mirepoix Tostada", notes="En mirepoix de 3 cm con piel limpia (aporta color ámbar)"),
-            Ingredient(name="Zanahoria", amount=250, unit="g", group="Mirepoix Tostada", notes="En rodajas gruesas oblicuas"),
-            Ingredient(name="Apio en rama", amount=120, unit="g", group="Mirepoix Tostada", notes="Sin hojas amargas"),
-            Ingredient(name="Cabeza de ajos entera", amount=1, unit="ud", group="Mirepoix Tostada", notes="Cortada transversalmente a la mitad"),
-            Ingredient(name="Concentrado doble de tomate", amount=45, unit="g", group="Umami y Desglasado", notes="Pincelado sobre los huesos los últimos 15 min de horno"),
-            Ingredient(name="Vino Oloroso seco o Vino Rancio", amount=250, unit="ml", group="Umami y Desglasado", notes="Para desglasar las bandejas de asado"),
-            Ingredient(name="Agua mineral de mineralización débil fría", amount=4500, unit="ml", group="Extracción", notes="Siempre partir de agua fría"),
-            Ingredient(name="Pimienta negra en grano, tomillo fresco y laurel", amount=8, unit="g", group="Bouquet Garni", notes="Infusionar solo la última hora"),
+            Ingredient(
+                name="Huesos de rodilla y caña de ternera",
+                amount=1800,
+                unit="g",
+                group="Base Ósea y Cárnica",
+                is_base_weight=True,
+                notes="Cortados a 5 cm para exponer colágeno",
+            ),
+            Ingredient(
+                name="Recortes de morcillo / jarrete de ternera",
+                amount=700,
+                unit="g",
+                group="Base Ósea y Cárnica",
+                notes="Aportan sabor cárnico y gelatina",
+            ),
+            Ingredient(
+                name="Manita de ternera o cerdo blanqueada",
+                amount=250,
+                unit="g",
+                group="Base Ósea y Cárnica",
+                notes="Clave para textura sedosa al reducir",
+            ),
+            Ingredient(
+                name="Cebolla dulce",
+                amount=350,
+                unit="g",
+                group="Mirepoix Tostada",
+                notes="En mirepoix de 3 cm con piel limpia (aporta color ámbar)",
+            ),
+            Ingredient(
+                name="Zanahoria",
+                amount=250,
+                unit="g",
+                group="Mirepoix Tostada",
+                notes="En rodajas gruesas oblicuas",
+            ),
+            Ingredient(
+                name="Apio en rama",
+                amount=120,
+                unit="g",
+                group="Mirepoix Tostada",
+                notes="Sin hojas amargas",
+            ),
+            Ingredient(
+                name="Cabeza de ajos entera",
+                amount=1,
+                unit="ud",
+                group="Mirepoix Tostada",
+                notes="Cortada transversalmente a la mitad",
+            ),
+            Ingredient(
+                name="Concentrado doble de tomate",
+                amount=45,
+                unit="g",
+                group="Umami y Desglasado",
+                notes="Pincelado sobre los huesos los últimos 15 min de horno",
+            ),
+            Ingredient(
+                name="Vino Oloroso seco o Vino Rancio",
+                amount=250,
+                unit="ml",
+                group="Umami y Desglasado",
+                notes="Para desglasar las bandejas de asado",
+            ),
+            Ingredient(
+                name="Agua mineral de mineralización débil fría",
+                amount=4500,
+                unit="ml",
+                group="Extracción",
+                notes="Siempre partir de agua fría",
+            ),
+            Ingredient(
+                name="Pimienta negra en grano, tomillo fresco y laurel",
+                amount=8,
+                unit="g",
+                group="Bouquet Garni",
+                notes="Infusionar solo la última hora",
+            ),
         ],
         steps=[
             RecipeStep(
@@ -257,7 +340,12 @@ def seed_initial_data() -> None:
         servings=4,
         yield_unit="raciones",
         scaling_mode="servings",
-        techniques=["Baja temperatura (Sous-vide)", "Sofrito de larga cocción", "Nacrado de grano", "Mantecado por colágeno"],
+        techniques=[
+            "Baja temperatura (Sous-vide)",
+            "Sofrito de larga cocción",
+            "Nacrado de grano",
+            "Mantecado por colágeno",
+        ],
         tags=["arroz", "meloso", "ibérico", "setas", "otoño", "baja-temperatura"],
         timings=Timings(
             prep_minutes=40,
@@ -266,9 +354,21 @@ def seed_initial_data() -> None:
             rest_notes="3 minutos de reposo fuera del fuego antes de servir (más las 16h previas de roner si se hace sous-vide)",
         ),
         temperatures=[
-            TemperaturePoint(stage="Baño Roner (Carrillera Sous-Vide)", temp_c=68, notes="16 horas para fundir colágeno manteniendo jugosidad fibrilar"),
-            TemperaturePoint(stage="Fondo de infusión en cazo", temp_c=95, notes="El fondo debe entrar siempre hirviendo al arroz"),
-            TemperaturePoint(stage="Emulsión final (Mantecado)", temp_c=65, notes="Fuera del fuego para no cortar la grasa de ajo asado"),
+            TemperaturePoint(
+                stage="Baño Roner (Carrillera Sous-Vide)",
+                temp_c=68,
+                notes="16 horas para fundir colágeno manteniendo jugosidad fibrilar",
+            ),
+            TemperaturePoint(
+                stage="Fondo de infusión en cazo",
+                temp_c=95,
+                notes="El fondo debe entrar siempre hirviendo al arroz",
+            ),
+            TemperaturePoint(
+                stage="Emulsión final (Mantecado)",
+                temp_c=65,
+                notes="Fuera del fuego para no cortar la grasa de ajo asado",
+            ),
         ],
         utensils=[
             RecipeUtensil(
@@ -312,16 +412,77 @@ def seed_initial_data() -> None:
             )
         ],
         ingredients=[
-            Ingredient(name="Arroz variedad Albufera o Senia", amount=320, unit="g", group="Arroz y Caldo", is_base_weight=True, notes="80g por comensal; absorbe sabor manteniendo centro al dente"),
-            Ingredient(name="Carrilleras de cerdo ibérico limpias", amount=600, unit="g", group="Proteína Principal", notes="Sin telilla plateada exterior"),
-            Ingredient(name="Trompetas de la muerte frescas (Craterellus cornucopioides)", amount=180, unit="g", group="Setas y Sofrito", notes="Limpias con pincel, sin sumergir en agua"),
-            Ingredient(name="Boletus edulis en dados de 1.5 cm", amount=150, unit="g", group="Setas y Sofrito", notes="Dorar fuerte por separado"),
-            Ingredient(name="Chalota", amount=140, unit="g", group="Setas y Sofrito", notes="Brunoise muy fina, pochada 45 min hasta color caramelo"),
-            Ingredient(name="Tomate pera rallado sin semillas", amount=90, unit="g", group="Setas y Sofrito", notes="Reducido hasta textura de mermelada seca"),
-            Ingredient(name="Pimentón de la Vera ahumado agridulce", amount=3, unit="g", group="Setas y Sofrito", notes="Infusionar 5 segundos fuera del fuego"),
-            Ingredient(name="Ajo negro o ajo asado en camisa", amount=25, unit="g", group="Acabado y Emulsión", notes="Emulsionado con 40 ml de AOVE Arbequina"),
-            Ingredient(name="Mantequilla noisette o grasa de tuétano", amount=25, unit="g", group="Acabado y Emulsión", notes="Para mantecar los últimos 2 minutos"),
-            Ingredient(name="Sal fina y pimienta negra recién molida", amount=8, unit="g", group="Condimento", notes="Ajustar tras probar el fondo reducido"),
+            Ingredient(
+                name="Arroz variedad Albufera o Senia",
+                amount=320,
+                unit="g",
+                group="Arroz y Caldo",
+                is_base_weight=True,
+                notes="80g por comensal; absorbe sabor manteniendo centro al dente",
+            ),
+            Ingredient(
+                name="Carrilleras de cerdo ibérico limpias",
+                amount=600,
+                unit="g",
+                group="Proteína Principal",
+                notes="Sin telilla plateada exterior",
+            ),
+            Ingredient(
+                name="Trompetas de la muerte frescas (Craterellus cornucopioides)",
+                amount=180,
+                unit="g",
+                group="Setas y Sofrito",
+                notes="Limpias con pincel, sin sumergir en agua",
+            ),
+            Ingredient(
+                name="Boletus edulis en dados de 1.5 cm",
+                amount=150,
+                unit="g",
+                group="Setas y Sofrito",
+                notes="Dorar fuerte por separado",
+            ),
+            Ingredient(
+                name="Chalota",
+                amount=140,
+                unit="g",
+                group="Setas y Sofrito",
+                notes="Brunoise muy fina, pochada 45 min hasta color caramelo",
+            ),
+            Ingredient(
+                name="Tomate pera rallado sin semillas",
+                amount=90,
+                unit="g",
+                group="Setas y Sofrito",
+                notes="Reducido hasta textura de mermelada seca",
+            ),
+            Ingredient(
+                name="Pimentón de la Vera ahumado agridulce",
+                amount=3,
+                unit="g",
+                group="Setas y Sofrito",
+                notes="Infusionar 5 segundos fuera del fuego",
+            ),
+            Ingredient(
+                name="Ajo negro o ajo asado en camisa",
+                amount=25,
+                unit="g",
+                group="Acabado y Emulsión",
+                notes="Emulsionado con 40 ml de AOVE Arbequina",
+            ),
+            Ingredient(
+                name="Mantequilla noisette o grasa de tuétano",
+                amount=25,
+                unit="g",
+                group="Acabado y Emulsión",
+                notes="Para mantecar los últimos 2 minutos",
+            ),
+            Ingredient(
+                name="Sal fina y pimienta negra recién molida",
+                amount=8,
+                unit="g",
+                group="Condimento",
+                notes="Ajustar tras probar el fondo reducido",
+            ),
         ],
         steps=[
             RecipeStep(
@@ -392,7 +553,12 @@ def seed_initial_data() -> None:
         servings=2,
         yield_unit="hogazas (880g)",
         scaling_mode="bakers_pct",
-        techniques=["Autólisis", "Pliegues en bobina (Coil Folds)", "Fermentación en frío", "Horneado con vapor en hierro"],
+        techniques=[
+            "Autólisis",
+            "Pliegues en bobina (Coil Folds)",
+            "Fermentación en frío",
+            "Horneado con vapor en hierro",
+        ],
         tags=["pan", "masa-madre", "fermentación", "panadería", "alta-hidratación"],
         timings=Timings(
             prep_minutes=45,
@@ -401,10 +567,26 @@ def seed_initial_data() -> None:
             rest_notes="1h autólisis + 3.5h fermentación en bloque a 25°C + 14.5h retardo en frío a 4°C",
         ),
         temperatures=[
-            TemperaturePoint(stage="Temperatura Deseada de la Masa (TDM)", temp_c=25.5, notes="Ajustar temperatura del agua para clavar la fermentación en bloque"),
-            TemperaturePoint(stage="Retardo en Cámara", temp_c=4, notes="Frena las levaduras y potencia ácidos orgánicos lácticos/acéticos"),
-            TemperaturePoint(stage="Horno + Cocotte tapada (Vapor)", temp_c=250, notes="Primeros 20 minutos para máxima expansión (Oven Spring)"),
-            TemperaturePoint(stage="Horno sin tapa (Corteza) / Corazón", temp_c=98, notes="220°C ambiente hasta alcanzar 98°C en el centro de la miga"),
+            TemperaturePoint(
+                stage="Temperatura Deseada de la Masa (TDM)",
+                temp_c=25.5,
+                notes="Ajustar temperatura del agua para clavar la fermentación en bloque",
+            ),
+            TemperaturePoint(
+                stage="Retardo en Cámara",
+                temp_c=4,
+                notes="Frena las levaduras y potencia ácidos orgánicos lácticos/acéticos",
+            ),
+            TemperaturePoint(
+                stage="Horno + Cocotte tapada (Vapor)",
+                temp_c=250,
+                notes="Primeros 20 minutos para máxima expansión (Oven Spring)",
+            ),
+            TemperaturePoint(
+                stage="Horno sin tapa (Corteza) / Corazón",
+                temp_c=98,
+                notes="220°C ambiente hasta alcanzar 98°C en el centro de la miga",
+            ),
         ],
         utensils=[
             RecipeUtensil(
@@ -439,12 +621,54 @@ def seed_initial_data() -> None:
             ),
         ],
         ingredients=[
-            Ingredient(name="Harina panadera de fuerza media (W280-300)", amount=800, unit="g", group="Harinas (Base 100%)", is_base_weight=True, notes="80% del peso total de harina"),
-            Ingredient(name="Harina de trigo integral ecológica", amount=150, unit="g", group="Harinas (Base 100%)", is_base_weight=True, notes="15% del peso total de harina"),
-            Ingredient(name="Harina de centeno integral", amount=50, unit="g", group="Harinas (Base 100%)", is_base_weight=True, notes="5% del peso total de harina"),
-            Ingredient(name="Agua filtrada (78% hidratación)", amount=780, unit="g", group="Fórmula Panadera", is_base_weight=False, notes="Reservar 50g para el bassinage con la sal"),
-            Ingredient(name="Masa Madre activa al 100% de hidratación (20%)", amount=200, unit="g", group="Fórmula Panadera", is_base_weight=False, notes="Usar en su pico máximo de volumen (triplicada)"),
-            Ingredient(name="Sal marina fina sin refinar (2.1%)", amount=21, unit="g", group="Fórmula Panadera", is_base_weight=False, notes="Incorporar tras la autólisis"),
+            Ingredient(
+                name="Harina panadera de fuerza media (W280-300)",
+                amount=800,
+                unit="g",
+                group="Harinas (Base 100%)",
+                is_base_weight=True,
+                notes="80% del peso total de harina",
+            ),
+            Ingredient(
+                name="Harina de trigo integral ecológica",
+                amount=150,
+                unit="g",
+                group="Harinas (Base 100%)",
+                is_base_weight=True,
+                notes="15% del peso total de harina",
+            ),
+            Ingredient(
+                name="Harina de centeno integral",
+                amount=50,
+                unit="g",
+                group="Harinas (Base 100%)",
+                is_base_weight=True,
+                notes="5% del peso total de harina",
+            ),
+            Ingredient(
+                name="Agua filtrada (78% hidratación)",
+                amount=780,
+                unit="g",
+                group="Fórmula Panadera",
+                is_base_weight=False,
+                notes="Reservar 50g para el bassinage con la sal",
+            ),
+            Ingredient(
+                name="Masa Madre activa al 100% de hidratación (20%)",
+                amount=200,
+                unit="g",
+                group="Fórmula Panadera",
+                is_base_weight=False,
+                notes="Usar en su pico máximo de volumen (triplicada)",
+            ),
+            Ingredient(
+                name="Sal marina fina sin refinar (2.1%)",
+                amount=21,
+                unit="g",
+                group="Fórmula Panadera",
+                is_base_weight=False,
+                notes="Incorporar tras la autólisis",
+            ),
         ],
         steps=[
             RecipeStep(

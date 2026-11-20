@@ -1,142 +1,204 @@
+"""FastAPI application for Mise en Place MD backed by PostgreSQL + Vinum Pulse bridge."""
+
 from __future__ import annotations
+
 import shutil
 import uuid
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import List, Optional
-from fastapi import FastAPI, HTTPException, UploadFile, File
+from typing import Any
+
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from sqlalchemy import text
 
-from app.models import Recipe, UtensilCatalogItem
+from app.database import SessionLocal, engine, settings
+from app.models import (
+    DishRecipeLinkRequest,
+    DishRecipeLinkResponse,
+    Recipe,
+    RecipeWineSuggestion,
+    UtensilCatalogItem,
+)
+from app.repository import RecipeRepository, safe_media_filename
+from app.seed import seed_initial_data
 from app.storage import (
     BASE_DIR,
-    RECIPES_DIR,
     MEDIA_DIR,
+    RECIPES_DIR,
     ensure_directories,
-    list_recipes,
-    get_recipe,
-    save_recipe,
-    delete_recipe,
-    load_utensils,
-    save_utensils,
-    slugify,
+    parse_recipe_markdown,
+    render_recipe_markdown,
 )
-from app.seed import seed_initial_data
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+repository = RecipeRepository(session_factory=SessionLocal)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI) -> AsyncIterator[None]:
+    """Initialize directories, seed legacy markdown files if absent, and hydrate DB."""
+    ensure_directories()
+    seed_initial_data()
+    repository.init_and_seed(db_engine=engine, import_markdown_files=True)
+    yield
+
 
 app = FastAPI(
-    title="Atelier Culinario — Recetario Técnico Local",
-    description="Gestión avanzada de recetas en Markdown + YAML para cocineros exigentes",
-    version="1.0.0",
+    title="Atelier Culinario — Mise en Place MD",
+    description=(
+        "Technical Recipe & Culinary R&D Platform backed by PostgreSQL "
+        "with bidirectional Vinum Pulse wine pairing."
+    ),
+    version="1.1.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=settings.cors_origins_list,
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 
-@app.on_event("startup")
-def on_startup() -> None:
-    ensure_directories()
-    seed_initial_data()
-
-
 class RawMarkdownPayload(BaseModel):
+    """Raw Markdown + YAML frontmatter payload for import/edit."""
+
     content: str
 
 
-@app.get("/api/recipes", response_model=List[Recipe])
-def api_list_recipes() -> List[Recipe]:
-    return list_recipes()
+@app.get("/healthz")
+def healthz() -> dict[str, str]:
+    """Liveness and database connectivity health check."""
+    with engine.connect() as conn:
+        conn.execute(text("SELECT 1"))
+    return {"status": "ok", "database_backend": engine.dialect.name}
+
+
+@app.get("/api/recipes", response_model=list[Recipe])
+def api_list_recipes(
+    q: str | None = Query(default=None, description="Optional search text"),
+    category: str | None = Query(default=None, description="Optional category filter"),
+    limit: int = Query(default=100, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> list[Recipe]:
+    """Return paginated recipes from PostgreSQL."""
+    return repository.list_recipes(q=q, category=category, limit=limit, offset=offset)
 
 
 @app.get("/api/recipes/{recipe_id}", response_model=Recipe)
 def api_get_recipe(recipe_id: str) -> Recipe:
-    recipe = get_recipe(recipe_id)
-    if not recipe:
+    """Return a single recipe by slug."""
+    recipe = repository.get_recipe(recipe_id)
+    if recipe is None:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
     return recipe
 
 
 @app.get("/api/recipes/{recipe_id}/markdown", response_class=PlainTextResponse)
 def api_get_recipe_markdown(recipe_id: str) -> str:
-    path = RECIPES_DIR / f"{recipe_id}.md"
-    if not path.exists():
-        raise HTTPException(status_code=404, detail="Archivo Markdown no encontrado")
-    return path.read_text(encoding="utf-8")
+    """Export a persisted recipe dynamically as Obsidian-compatible Markdown + YAML."""
+    recipe = repository.get_recipe(recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    return render_recipe_markdown(recipe)
 
 
 @app.put("/api/recipes/{recipe_id}/markdown", response_model=Recipe)
 def api_put_recipe_markdown(recipe_id: str, payload: RawMarkdownPayload) -> Recipe:
-    path = RECIPES_DIR / f"{recipe_id}.md"
-    path.write_text(payload.content, encoding="utf-8")
-    recipe = get_recipe(recipe_id)
-    if not recipe:
+    """Import/update a recipe from raw Markdown + YAML frontmatter into PostgreSQL."""
+    tmp_path = RECIPES_DIR / f".import-{uuid.uuid4().hex[:8]}.md"
+    try:
+        ensure_directories()
+        tmp_path.write_text(payload.content, encoding="utf-8")
+        parsed = parse_recipe_markdown(tmp_path)
+    finally:
+        if tmp_path.exists():
+            tmp_path.unlink()
+
+    if parsed is None:
         raise HTTPException(status_code=400, detail="No se pudo parsear el archivo Markdown")
-    # Re-sincronizar y normalizar
-    return save_recipe(recipe, previous_id=recipe_id)
+    if not parsed.id:
+        parsed.id = recipe_id
+    return repository.save_recipe(parsed, previous_slug=recipe_id)
 
 
 @app.post("/api/recipes", response_model=Recipe)
 def api_create_recipe(recipe: Recipe) -> Recipe:
-    return save_recipe(recipe)
+    """Create a new technical recipe in PostgreSQL."""
+    return repository.save_recipe(recipe)
 
 
 @app.put("/api/recipes/{recipe_id}", response_model=Recipe)
 def api_update_recipe(recipe_id: str, recipe: Recipe) -> Recipe:
+    """Update an existing recipe by slug."""
     if not recipe.id:
         recipe.id = recipe_id
-    return save_recipe(recipe, previous_id=recipe_id)
+    return repository.save_recipe(recipe, previous_slug=recipe_id)
 
 
 @app.delete("/api/recipes/{recipe_id}")
-def api_delete_recipe(recipe_id: str) -> dict:
-    deleted = delete_recipe(recipe_id)
+def api_delete_recipe(recipe_id: str) -> dict[str, Any]:
+    """Delete a recipe by slug."""
+    deleted = repository.delete_recipe(recipe_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Receta no encontrada")
     return {"ok": True, "deleted_id": recipe_id}
 
 
-@app.get("/api/utensils", response_model=List[UtensilCatalogItem])
-def api_list_utensils() -> List[UtensilCatalogItem]:
-    return load_utensils()
+@app.get("/api/recipes/{recipe_id}/wine-suggestion", response_model=RecipeWineSuggestion)
+def api_get_recipe_wine_suggestion(recipe_id: str) -> RecipeWineSuggestion:
+    """Suggest a mid-price wine of the dominant/most matching type from Vinum Pulse."""
+    try:
+        suggestion = repository.suggest_wine_for_recipe(
+            slug=recipe_id,
+            vinum_base_url=settings.vinum_pulse_base_url,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    if suggestion is None:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    return suggestion
 
 
-@app.put("/api/utensils", response_model=List[UtensilCatalogItem])
-def api_save_utensils(items: List[UtensilCatalogItem]) -> List[UtensilCatalogItem]:
-    return save_utensils(items)
+@app.post("/api/pairing/links", response_model=DishRecipeLinkResponse)
+def api_link_dish_to_recipe(payload: DishRecipeLinkRequest) -> DishRecipeLinkResponse:
+    """Link a Vinum Pulse dish slug with a Mise en Place recipe slug."""
+    try:
+        return repository.link_dish_to_recipe(payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/utensils", response_model=list[UtensilCatalogItem])
+def api_list_utensils() -> list[UtensilCatalogItem]:
+    """List kitchen utensils catalog."""
+    return repository.list_utensils()
+
+
+@app.put("/api/utensils", response_model=list[UtensilCatalogItem])
+def api_save_utensils(items: list[UtensilCatalogItem]) -> list[UtensilCatalogItem]:
+    """Batch upsert kitchen utensils."""
+    return repository.save_utensils(items)
 
 
 @app.post("/api/utensils", response_model=UtensilCatalogItem)
 def api_upsert_utensil(item: UtensilCatalogItem) -> UtensilCatalogItem:
-    items = load_utensils()
-    if not item.id:
-        item.id = slugify(item.name)
-    replaced = False
-    for idx, existing in enumerate(items):
-        if existing.id == item.id:
-            items[idx] = item
-            replaced = True
-            break
-    if not replaced:
-        items.append(item)
-    save_utensils(items)
-    return item
+    """Upsert a single utensil."""
+    return repository.upsert_utensil(item)
 
 
 @app.post("/api/upload")
-async def api_upload_image(file: UploadFile = File(...)) -> dict:
+async def api_upload_image(file: UploadFile = File(...)) -> dict[str, str]:  # noqa: B008
+    """Store an uploaded recipe image safely in local media directory."""
     ensure_directories()
-    ext = Path(file.filename or "image.jpg").suffix.lower()
-    if ext not in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif"}:
-        ext = ".jpg"
-    safe_stem = slugify(Path(file.filename or "foto").stem)[:40]
+    safe_stem, ext = safe_media_filename(file.filename or "foto.jpg")
     unique_name = f"{safe_stem}-{uuid.uuid4().hex[:8]}{ext}"
     dest_path = MEDIA_DIR / unique_name
     with dest_path.open("wb") as buffer:
@@ -145,8 +207,11 @@ async def api_upload_image(file: UploadFile = File(...)) -> dict:
 
 
 @app.get("/api/info")
-def api_info() -> dict:
+def api_info() -> dict[str, str]:
+    """Return runtime storage and cross-app integration diagnostics."""
     return {
+        "database_backend": engine.dialect.name,
+        "vinum_pulse_base_url": settings.vinum_pulse_base_url,
         "recipes_dir": str(RECIPES_DIR),
         "utensils_file": str(BASE_DIR / "data" / "utensils.yaml"),
         "media_dir": str(MEDIA_DIR),
@@ -160,4 +225,13 @@ app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 @app.get("/")
 def serve_index() -> FileResponse:
+    """Serve the SPA entry point."""
+    return FileResponse(STATIC_DIR / "index.html")
+
+
+@app.get("/recipes/{recipe_id}")
+def serve_recipe_deep_link(recipe_id: str) -> FileResponse:
+    """Serve SPA entry point for direct deep links coming from Vinum Pulse dishes."""
+    if repository.get_recipe(recipe_id) is None:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
     return FileResponse(STATIC_DIR / "index.html")
