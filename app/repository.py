@@ -116,9 +116,7 @@ def _record_to_recipe(record: RecipeRecord) -> Recipe:
         rating=float(record.rating),
         servings=float(record.servings),
         yield_unit=record.yield_unit,
-        scaling_mode=(
-            "bakers_pct" if record.scaling_mode == "bakers_pct" else "servings"
-        ),
+        scaling_mode=("bakers_pct" if record.scaling_mode == "bakers_pct" else "servings"),
         techniques=list(record.techniques or []),
         tags=list(record.tags or []),
         timings=Timings(
@@ -127,9 +125,7 @@ def _record_to_recipe(record: RecipeRecord) -> Recipe:
             rest_minutes=record.rest_minutes,
             rest_notes=record.rest_notes,
         ),
-        temperatures=[
-            TemperaturePoint.model_validate(tp) for tp in (record.temperatures or [])
-        ],
+        temperatures=[TemperaturePoint.model_validate(tp) for tp in (record.temperatures or [])],
         utensils=[
             RecipeUtensil(
                 utensil_id=link.utensil.slug,
@@ -163,9 +159,7 @@ def _record_to_recipe(record: RecipeRecord) -> Recipe:
         steps=[RecipeStep.model_validate(st) for st in (record.steps or [])],
         plating_notes=record.plating_notes,
         chef_notes=record.chef_notes,
-        iterations=[
-            IterationEntry.model_validate(it) for it in (record.iterations or [])
-        ],
+        iterations=[IterationEntry.model_validate(it) for it in (record.iterations or [])],
         cover_photo=record.cover_photo_url,
         gallery=[GalleryPhoto.model_validate(ph) for ph in (record.gallery or [])],
         created_at=record.created_at.strftime("%Y-%m-%d %H:%M"),
@@ -268,21 +262,68 @@ class RecipeRepository:
                     self._upsert_utensil_in_session(session, item)
                 session.commit()
 
-            if session.scalars(select(RecipeRecord)).first() is None:
-                md_recipes = list_markdown_recipes()
+            existing_slugs = set(session.scalars(select(RecipeRecord.slug)).all())
+            md_recipes = [r for r in list_markdown_recipes() if r.id and r.id not in existing_slugs]
+            if md_recipes:
                 # Insert sub-recipes first so foreign keys resolve cleanly.
                 ordered = sorted(md_recipes, key=lambda r: (not r.is_subrecipe, r.id))
                 for recipe in ordered:
                     self._save_recipe_in_session(session, recipe)
                 session.commit()
 
+            self._auto_link_matching_dishes_in_session(session)
+            session.commit()
+
+    def _auto_link_matching_dishes_in_session(self, session: Session) -> int:
+        """Create primary curated dish-recipe links when dish.slug == recipe.slug."""
+        dishes = list(session.scalars(select(DishRecord)).all())
+        if not dishes:
+            return 0
+
+        recipes_by_slug = {
+            slug: recipe_id
+            for recipe_id, slug in session.execute(select(RecipeRecord.id, RecipeRecord.slug)).all()
+        }
+        primary_dish_ids = set(
+            session.scalars(
+                select(DishRecipeLinkRecord.dish_id).where(
+                    DishRecipeLinkRecord.is_primary.is_(True)
+                )
+            ).all()
+        )
+        existing_pairs: set[tuple[int, int]] = {
+            (int(d_id), int(r_id))
+            for d_id, r_id in session.execute(
+                select(DishRecipeLinkRecord.dish_id, DishRecipeLinkRecord.recipe_id)
+            ).all()
+        }
+
+        created = 0
+        for dish in dishes:
+            recipe_id = recipes_by_slug.get(dish.slug)
+            if recipe_id is None:
+                continue
+            if dish.id in primary_dish_ids or (dish.id, recipe_id) in existing_pairs:
+                continue
+            session.add(
+                DishRecipeLinkRecord(
+                    dish_id=dish.id,
+                    recipe_id=recipe_id,
+                    is_primary=True,
+                    match_source="curated",
+                    confidence=Decimal("1.000"),
+                )
+            )
+            primary_dish_ids.add(dish.id)
+            existing_pairs.add((dish.id, recipe_id))
+            created += 1
+        return created
+
     def _recipe_query(self) -> Any:
         """Build eager-loaded recipe SELECT statement (avoids N+1 queries)."""
         return select(RecipeRecord).options(
             selectinload(RecipeRecord.ingredients),
-            selectinload(RecipeRecord.utensil_links).selectinload(
-                RecipeUtensilRecord.utensil
-            ),
+            selectinload(RecipeRecord.utensil_links).selectinload(RecipeUtensilRecord.utensil),
             selectinload(RecipeRecord.subrecipe_links).selectinload(
                 RecipeSubrecipeRecord.child_recipe
             ),
@@ -474,9 +515,7 @@ class RecipeRepository:
     def delete_recipe(self, slug: str) -> bool:
         """Delete a recipe by slug."""
         with self._session_factory() as session:
-            record = session.scalars(
-                select(RecipeRecord).where(RecipeRecord.slug == slug)
-            ).first()
+            record = session.scalars(select(RecipeRecord).where(RecipeRecord.slug == slug)).first()
             if record is None:
                 return False
             session.delete(record)
@@ -514,9 +553,7 @@ class RecipeRepository:
         session.flush()
         return record
 
-    def save_utensils(
-        self, items: list[UtensilCatalogItem]
-    ) -> list[UtensilCatalogItem]:
+    def save_utensils(self, items: list[UtensilCatalogItem]) -> list[UtensilCatalogItem]:
         """Upsert a batch of utensils into culinary.utensils."""
         with self._session_factory() as session:
             for item in items:
@@ -531,9 +568,7 @@ class RecipeRepository:
             session.commit()
             return _record_to_utensil(record)
 
-    def link_dish_to_recipe(
-        self, payload: DishRecipeLinkRequest
-    ) -> DishRecipeLinkResponse:
+    def link_dish_to_recipe(self, payload: DishRecipeLinkRequest) -> DishRecipeLinkResponse:
         """Bind a Vinum Pulse dish slug to a Mise en Place recipe slug."""
         with self._session_factory() as session:
             dish = session.scalars(
@@ -672,9 +707,7 @@ class RecipeRepository:
     ) -> RecipeWineSuggestion | None:
         """Suggest a mid-price wine of the dominant/most habitual type for a recipe."""
         with self._session_factory() as session:
-            recipe = session.scalars(
-                self._recipe_query().where(RecipeRecord.slug == slug)
-            ).first()
+            recipe = session.scalars(self._recipe_query().where(RecipeRecord.slug == slug)).first()
             if recipe is None:
                 return None
 
@@ -691,9 +724,7 @@ class RecipeRepository:
             )
             if not wines:
                 wines = list(
-                    session.scalars(
-                        select(WineRecord).order_by(WineRecord.price_eur.asc())
-                    ).all()
+                    session.scalars(select(WineRecord).order_by(WineRecord.price_eur.asc())).all()
                 )
             if not wines:
                 raise ValueError(
@@ -705,9 +736,7 @@ class RecipeRepository:
             p35 = round(_percentile(prices, 0.35), 2)
             p65 = round(_percentile(prices, 0.65), 2)
 
-            mid_band_wines = [
-                w for w in wines if p35 <= float(w.price_eur) <= p65
-            ] or wines
+            mid_band_wines = [w for w in wines if p35 <= float(w.price_eur) <= p65] or wines
 
             if target_sensory is not None:
                 ranked = sorted(
@@ -746,9 +775,7 @@ class RecipeRepository:
                 median_price_eur=median_price,
                 mid_price_band_eur=(p35, p65),
                 recommended_wine=_wine_to_suggestion(primary, vinum_base_url),
-                alternatives=[
-                    _wine_to_suggestion(alt, vinum_base_url) for alt in alternatives
-                ],
+                alternatives=[_wine_to_suggestion(alt, vinum_base_url) for alt in alternatives],
                 matched_keywords=matched_keywords,
                 rationale=rationale,
             )

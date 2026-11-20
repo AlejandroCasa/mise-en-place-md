@@ -2,7 +2,7 @@
 id: arroz-meloso-carrillera-setas
 title: Arroz Meloso de Carrillera Ibérica 68°C y Trompetas de la Muerte
 subtitle: Grano Bombita o Senia ligado con colágeno natural de carrillera glaseada y emulsión de ajo asado
-category: Principal
+category: Arroces
 is_subrecipe: false
 difficulty: 4
 rating: 5.0
@@ -194,7 +194,7 @@ updated_at: 2026-10-22 10:25
 # Arroz Meloso de Carrillera Ibérica 68°C y Trompetas de la Muerte
 *Grano Bombita o Senia ligado con colágeno natural de carrillera glaseada y emulsión de ajo asado*
 
-**Categoría:** Principal | **Dificultad:** ★★★★☆ (4/5) | **Rendimiento:** 4 raciones
+**Categoría:** Arroces | **Dificultad:** ★★★★☆ (4/5) | **Rendimiento:** 4 raciones
 **Tiempos:** Prep: 40 min · Cocción: 25 min · Reposo: 3 min (3 minutos de reposo fuera del fuego antes de servir (más las 16h previas de roner si se hace sous-vide))
 
 ## Utensilios y Equipamiento
