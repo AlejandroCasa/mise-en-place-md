@@ -286,9 +286,7 @@ def test_wine_suggestion_by_tag_affinity_and_linked_dish(
     seafood["ingredients"] = [{"name": "Lubina salvaje", "amount": 800, "unit": "g"}]
     created_sea = isolated_client.post("/api/recipes", json=seafood).json()
 
-    sea_sug = isolated_client.get(
-        f"/api/recipes/{created_sea['id']}/wine-suggestion"
-    )
+    sea_sug = isolated_client.get(f"/api/recipes/{created_sea['id']}/wine-suggestion")
     assert sea_sug.status_code == 200
     sea_data = sea_sug.json()
     assert sea_data["dominant_wine_type"] == "White"
