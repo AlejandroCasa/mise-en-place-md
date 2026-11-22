@@ -333,3 +333,31 @@ def test_utensils_and_safe_filename(isolated_client: TestClient) -> None:
     stem, ext = safe_media_filename("../../etc/passwd.exe")
     assert stem == "passwd"
     assert ext == ".jpg"
+
+
+def test_modular_frontend_es_assets_and_zero_inline_handlers(
+    isolated_client: TestClient,
+) -> None:
+    """Verify SPA serves ES module entrypoint with zero inline event handlers."""
+    index_resp = isolated_client.get("/")
+    assert index_resp.status_code == 200
+    html = index_resp.text
+    assert '<script type="module" src="/static/js/main.js"></script>' in html
+    for forbidden in ("onclick=", "oninput=", "onchange=", "ontoggle="):
+        assert forbidden not in html.lower()
+
+    for module_name in (
+        "constants.js",
+        "state.js",
+        "api.js",
+        "timers.js",
+        "views.js",
+        "editor.js",
+        "main.js",
+    ):
+        mod_resp = isolated_client.get(f"/static/js/{module_name}")
+        assert mod_resp.status_code == 200
+        assert "javascript" in mod_resp.headers["content-type"]
+
+    legacy_resp = isolated_client.get("/static/app.js")
+    assert legacy_resp.status_code == 404
