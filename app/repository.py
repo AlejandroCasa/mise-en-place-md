@@ -98,6 +98,39 @@ WINE_TYPE_LABELS_ES: dict[str, str] = {
     "Rose": "Rosado",
 }
 
+
+class SubrecipeCycleError(ValueError):
+    """Raised when saving recipe_subrecipes would introduce a circular dependency."""
+
+    def __init__(self, cycle_path: list[str]) -> None:
+        self.cycle_path = cycle_path
+        super().__init__(f"Circular sub-recipe reference detected: {' -> '.join(cycle_path)}")
+
+
+def _find_cycle_from_node(start_id: int, adj: dict[int, list[int]]) -> list[int] | None:
+    """Run 3-color DFS from start_id to detect any directed cycle and return its node IDs."""
+    visit_state: dict[int, int] = {}  # absent=unvisited, 1=visiting, 2=visited
+    path: list[int] = []
+
+    def dfs(node: int) -> list[int] | None:
+        visit_state[node] = 1
+        path.append(node)
+        for nxt in adj.get(node, ()):
+            nxt_state = visit_state.get(nxt, 0)
+            if nxt_state == 1:
+                cycle_start = path.index(nxt)
+                return [*path[cycle_start:], nxt]
+            if nxt_state == 0:
+                found = dfs(nxt)
+                if found is not None:
+                    return found
+        path.pop()
+        visit_state[node] = 2
+        return None
+
+    return dfs(start_id)
+
+
 RecipeSortBy = Literal[
     "relevance",
     "title_asc",
@@ -622,12 +655,16 @@ class RecipeRepository:
     ) -> Recipe:
         """Create or update a recipe and all normalized child rows atomically."""
         with self._session_factory() as session:
-            saved = self._save_recipe_in_session(
-                session,
-                recipe,
-                previous_slug=previous_slug,
-            )
-            session.commit()
+            try:
+                saved = self._save_recipe_in_session(
+                    session,
+                    recipe,
+                    previous_slug=previous_slug,
+                )
+                session.commit()
+            except Exception:
+                session.rollback()
+                raise
             stmt = self._recipe_query().where(RecipeRecord.id == saved.id)
             reloaded = session.scalars(stmt).one()
             return _record_to_recipe(reloaded)
@@ -650,6 +687,38 @@ class RecipeRepository:
                 return candidate
             candidate = f"{base_slug}-{counter}"
             counter += 1
+
+    def _validate_subrecipe_dag(
+        self,
+        session: Session,
+        parent_id: int,
+        parent_slug: str,
+        child_ids: list[int],
+    ) -> None:
+        """Verify that assigning child_ids to parent_id preserves an acyclic DAG."""
+        if not child_ids:
+            return
+        if parent_id in child_ids:
+            raise SubrecipeCycleError([parent_slug, parent_slug])
+
+        adj: dict[int, list[int]] = {}
+        for edge_parent, edge_child in session.execute(
+            select(RecipeSubrecipeRecord.parent_recipe_id, RecipeSubrecipeRecord.child_recipe_id)
+        ).all():
+            p_id = int(edge_parent)
+            if p_id != parent_id:
+                adj.setdefault(p_id, []).append(int(edge_child))
+        adj[parent_id] = list(child_ids)
+
+        cycle_ids = _find_cycle_from_node(parent_id, adj)
+        if cycle_ids is not None:
+            id_to_slug = {
+                int(rid): rslug
+                for rid, rslug in session.execute(select(RecipeRecord.id, RecipeRecord.slug)).all()
+            }
+            id_to_slug[parent_id] = parent_slug
+            cycle_slugs = [id_to_slug.get(node_id, str(node_id)) for node_id in cycle_ids]
+            raise SubrecipeCycleError(cycle_slugs)
 
     def _save_recipe_in_session(
         self,
@@ -746,24 +815,40 @@ class RecipeRepository:
                     )
                 )
 
-        # Replace subrecipe links (only for existing child recipes, avoiding self-loops)
-        record.subrecipe_links.clear()
+        # Validate and replace subrecipe links (enforcing acyclic DAG)
+        resolved_subrecipes: list[tuple[SubRecipeLink, RecipeRecord]] = []
         seen_child_ids: set[int] = set()
         for sr in recipe.subrecipes:
+            if sr.recipe_id == target_slug or slugify(sr.recipe_id) == target_slug:
+                raise SubrecipeCycleError([target_slug, target_slug])
             child = session.scalars(
                 select(RecipeRecord).where(RecipeRecord.slug == sr.recipe_id)
             ).first()
-            if child is not None and child.id != record.id and child.id not in seen_child_ids:
-                seen_child_ids.add(child.id)
-                record.subrecipe_links.append(
-                    RecipeSubrecipeRecord(
-                        child_recipe_id=child.id,
-                        name=sr.name or child.title,
-                        amount=_to_decimal(sr.amount),
-                        unit=sr.unit,
-                        notes=sr.notes,
-                    )
+            if child is not None:
+                if child.id == record.id:
+                    raise SubrecipeCycleError([target_slug, target_slug])
+                if child.id not in seen_child_ids:
+                    seen_child_ids.add(child.id)
+                    resolved_subrecipes.append((sr, child))
+
+        self._validate_subrecipe_dag(
+            session=session,
+            parent_id=record.id,
+            parent_slug=target_slug,
+            child_ids=[child.id for _, child in resolved_subrecipes],
+        )
+
+        record.subrecipe_links.clear()
+        for sr, child in resolved_subrecipes:
+            record.subrecipe_links.append(
+                RecipeSubrecipeRecord(
+                    child_recipe_id=child.id,
+                    name=sr.name or child.title,
+                    amount=_to_decimal(sr.amount),
+                    unit=sr.unit,
+                    notes=sr.notes,
                 )
+            )
 
         session.flush()
         return record

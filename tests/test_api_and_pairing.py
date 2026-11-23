@@ -4,14 +4,17 @@ from __future__ import annotations
 
 from collections.abc import Iterator
 from decimal import Decimal
+from pathlib import Path
 from typing import Any
 
 import pytest
+from alembic.config import Config
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, inspect
 from sqlalchemy.orm import Session, sessionmaker
 
 import app.main as main_module
+from alembic import command
 from app.database import create_db_engine
 from app.db_models import DishRecord, WineRecord
 from app.repository import RecipeRepository, safe_media_filename
@@ -589,3 +592,108 @@ def test_postgres_fts_sql_compilation() -> None:
     assert "websearch_to_tsquery(" in pg_sql_2
     assert "carrillera -marisco" in compiled_2.params.values()
     assert "tags &&" not in pg_sql_2
+
+
+def test_subrecipe_dag_cycle_detection_returns_422(isolated_client: TestClient) -> None:
+    """Reject direct, self-referential, and transitive sub-recipe cycles with HTTP 422."""
+    # 1. Self-loop on creation (POST /api/recipes)
+    self_payload = _sample_recipe_payload(title="Receta Auto Ciclo")
+    self_payload["id"] = "receta-auto-ciclo"
+    self_payload["subrecipes"] = [{"recipe_id": "receta-auto-ciclo", "name": "Self"}]
+    self_resp = isolated_client.post("/api/recipes", json=self_payload)
+    assert self_resp.status_code == 422
+    assert "receta-auto-ciclo" in self_resp.json()["cycle"]
+    assert isolated_client.get("/api/recipes/receta-auto-ciclo").status_code == 404
+
+    # 2. Build valid diamond DAG: A -> [B, C], B -> [D], C -> [D]
+    for slug, title, is_sub in (
+        ("dag-d", "DAG D", True),
+        ("dag-b", "DAG B", True),
+        ("dag-c", "DAG C", True),
+        ("dag-a", "DAG A", False),
+    ):
+        payload = _sample_recipe_payload(title=title)
+        payload["id"] = slug
+        payload["is_subrecipe"] = is_sub
+        assert isolated_client.post("/api/recipes", json=payload).status_code == 200
+
+    b_upd = isolated_client.get("/api/recipes/dag-b").json()
+    b_upd["subrecipes"] = [{"recipe_id": "dag-d", "name": "DAG D", "amount": 100, "unit": "g"}]
+    assert isolated_client.put("/api/recipes/dag-b", json=b_upd).status_code == 200
+
+    c_upd = isolated_client.get("/api/recipes/dag-c").json()
+    c_upd["subrecipes"] = [{"recipe_id": "dag-d", "name": "DAG D", "amount": 100, "unit": "g"}]
+    assert isolated_client.put("/api/recipes/dag-c", json=c_upd).status_code == 200
+
+    a_upd = isolated_client.get("/api/recipes/dag-a").json()
+    a_upd["subrecipes"] = [
+        {"recipe_id": "dag-b", "name": "DAG B", "amount": 200, "unit": "g"},
+        {"recipe_id": "dag-c", "name": "DAG C", "amount": 150, "unit": "g"},
+    ]
+    a_res = isolated_client.put("/api/recipes/dag-a", json=a_upd)
+    assert a_res.status_code == 200
+    assert len(a_res.json()["subrecipes"]) == 2
+
+    # 3. Direct 2-node cycle: D -> B when B -> D exists
+    d_upd = isolated_client.get("/api/recipes/dag-d").json()
+    d_upd["subrecipes"] = [{"recipe_id": "dag-b", "name": "DAG B", "amount": 50, "unit": "g"}]
+    direct_cycle = isolated_client.put("/api/recipes/dag-d", json=d_upd)
+    assert direct_cycle.status_code == 422
+    assert direct_cycle.json()["cycle"] == ["dag-d", "dag-b", "dag-d"]
+
+    # 4. Transitive 3-node cycle: D -> A when A -> B -> D exists
+    d_upd["subrecipes"] = [{"recipe_id": "dag-a", "name": "DAG A", "amount": 50, "unit": "g"}]
+    transitive_cycle = isolated_client.put("/api/recipes/dag-d", json=d_upd)
+    assert transitive_cycle.status_code == 422
+    assert transitive_cycle.json()["cycle"][0] == "dag-d"
+    assert transitive_cycle.json()["cycle"][-1] == "dag-d"
+
+    # Confirm rollback preserved D with 0 subrecipes
+    assert isolated_client.get("/api/recipes/dag-d").json()["subrecipes"] == []
+
+    # 5. Markdown import endpoint also enforces DAG cycle detection with 422
+    md_cycle = """---
+id: dag-d
+title: DAG D
+subrecipes:
+  - recipe_id: dag-a
+    name: DAG A
+    amount: 50
+    unit: g
+---
+# DAG D
+"""
+    md_resp = isolated_client.put("/api/recipes/dag-d/markdown", json={"content": md_cycle})
+    assert md_resp.status_code == 422
+
+
+def test_alembic_baseline_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
+    """Verify Alembic baseline migration upgrades, downgrades, and re-upgrades cleanly."""
+    db_file = tmp_path / "alembic_test.db"
+    db_url = f"sqlite:///{db_file}"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", db_url)
+
+    command.upgrade(cfg, "head")
+    eng = create_engine(db_url)
+    tables_after_up = set(inspect(eng).get_table_names())
+    assert {
+        "recipes",
+        "recipe_ingredients",
+        "recipe_subrecipes",
+        "utensils",
+        "recipe_utensils",
+        "dish_recipe_links",
+        "recipe_sensory_profiles",
+        "tag_wine_affinity",
+        "alembic_version",
+    }.issubset(tables_after_up)
+
+    command.downgrade(cfg, "base")
+    tables_after_down = set(inspect(eng).get_table_names())
+    assert "recipes" not in tables_after_down
+    assert "recipe_subrecipes" not in tables_after_down
+
+    command.upgrade(cfg, "head")
+    assert "recipes" in set(inspect(eng).get_table_names())
+    eng.dispose()

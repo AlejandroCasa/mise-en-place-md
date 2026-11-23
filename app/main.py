@@ -9,9 +9,9 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import Annotated, Any
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -24,7 +24,7 @@ from app.models import (
     RecipeWineSuggestion,
     UtensilCatalogItem,
 )
-from app.repository import RecipeRepository, RecipeSortBy, safe_media_filename
+from app.repository import RecipeRepository, RecipeSortBy, SubrecipeCycleError, safe_media_filename
 from app.seed import seed_initial_data
 from app.storage import (
     BASE_DIR,
@@ -64,6 +64,18 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+
+@app.exception_handler(SubrecipeCycleError)
+async def subrecipe_cycle_exception_handler(
+    _request: Request,
+    exc: SubrecipeCycleError,
+) -> JSONResponse:
+    """Return HTTP 422 when saving recipe_subrecipes would introduce a DAG cycle."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": str(exc), "cycle": exc.cycle_path},
+    )
 
 
 class RawMarkdownPayload(BaseModel):
