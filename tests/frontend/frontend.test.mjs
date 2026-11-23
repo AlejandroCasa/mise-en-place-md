@@ -5,6 +5,7 @@ import test from "node:test";
 import { fileURLToPath } from "node:url";
 
 import {
+  buildRecipeQueryParams,
   checkRecipeEquipmentStatus,
   computeScaleFactorFromBaseWeight,
   computeScaleFactorFromServings,
@@ -114,6 +115,27 @@ test("filterAndSortRecipes filters by equipment, ingredients, and sorts properly
 
   const excluded = filterAndSortRecipes(recipes, { ingExclude: "ternera" }, utensils);
   assert.deepEqual(excluded.map((r) => r.id), ["carrillera"]);
+
+  const qs = buildRecipeQueryParams({
+    q: "carrillera -marisco",
+    cookableToday: true,
+    ingInclude: "boletus",
+    ingExclude: "lactosa",
+    category: "Carnes y Caza",
+    subType: "main",
+    utensilId: "roner",
+    technique: "Sous-vide",
+    sortBy: "relevance",
+  });
+  assert.equal(qs.get("q"), "carrillera -marisco");
+  assert.equal(qs.get("cookable"), "true");
+  assert.equal(qs.get("ing_include"), "boletus");
+  assert.equal(qs.get("ing_exclude"), "lactosa");
+  assert.equal(qs.get("category"), "Carnes y Caza");
+  assert.equal(qs.get("is_subrecipe"), "false");
+  assert.equal(qs.get("utensil_id"), "roner");
+  assert.equal(qs.get("technique"), "Sous-vide");
+  assert.equal(qs.get("sort_by"), "relevance");
 });
 
 test("timers tick down deterministically and signal completion", () => {

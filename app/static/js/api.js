@@ -2,6 +2,14 @@
 // Mise en Place MD — REST API Client
 // ============================================================================
 
+import { buildRecipeQueryParams } from "./state.js";
+
+export async function fetchRecipes(filters = {}, { signal } = {}) {
+  const qs = buildRecipeQueryParams(filters).toString();
+  const url = qs ? `/api/recipes?${qs}` : "/api/recipes";
+  return fetch(url, { signal });
+}
+
 export async function fetchBootstrapData() {
   const [recipesRes, utensilsRes] = await Promise.all([
     fetch("/api/recipes"),

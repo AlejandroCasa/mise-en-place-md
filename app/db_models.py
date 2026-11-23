@@ -11,6 +11,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    FetchedValue,
     ForeignKey,
     Identity,
     Integer,
@@ -19,14 +20,15 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
 )
-from sqlalchemy.dialects.postgresql import ARRAY, JSONB
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB, TSVECTOR
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database import Base
 
-# Use native PostgreSQL ARRAY(Text) / JSONB on Postgres and JSON fallback on SQLite tests.
+# Use native PostgreSQL ARRAY(Text) / JSONB / TSVECTOR on Postgres and fallbacks on SQLite tests.
 StringListType = JSON().with_variant(ARRAY(Text), "postgresql")
 JsonDocType = JSON().with_variant(JSONB, "postgresql")
+TSVectorType = Text().with_variant(TSVECTOR, "postgresql")
 # Use BigInteger IDENTITY on Postgres and Integer PK on SQLite (autoincrement requires INTEGER).
 IdType = BigInteger().with_variant(Integer, "sqlite")
 
@@ -72,6 +74,12 @@ class RecipeRecord(Base):
     chef_notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
     cover_photo_url: Mapped[str] = mapped_column(Text, default="", nullable=False)
     gallery: Mapped[list[dict[str, Any]]] = mapped_column(JsonDocType, default=list, nullable=False)
+    search_tsv: Mapped[str | None] = mapped_column(
+        TSVectorType,
+        FetchedValue(),
+        nullable=True,
+        deferred=True,
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

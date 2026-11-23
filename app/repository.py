@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import math
+import shlex
 from decimal import Decimal
 from pathlib import Path
 from typing import Any, Literal
 
-from sqlalchemy import Engine, select
+from sqlalchemy import Engine, Text, func, select, type_coerce
+from sqlalchemy.dialects.postgresql import ARRAY, TSVECTOR
 from sqlalchemy.orm import Session, selectinload, sessionmaker
 
 from app.database import Base
@@ -95,6 +97,146 @@ WINE_TYPE_LABELS_ES: dict[str, str] = {
     "Fortified": "Generoso / Fortificado",
     "Rose": "Rosado",
 }
+
+RecipeSortBy = Literal[
+    "relevance",
+    "title_asc",
+    "title_desc",
+    "updated_desc",
+    "rating_desc",
+    "difficulty_asc",
+    "difficulty_desc",
+    "active_time_asc",
+    "total_time_asc",
+]
+
+
+def _parse_csv_terms(raw: str | None) -> list[str]:
+    """Split a comma-separated filter string into lowercase non-empty terms."""
+    if not raw:
+        return []
+    return [part.strip().lower() for part in raw.split(",") if part.strip()]
+
+
+def _has_websearch_operators(query: str) -> bool:
+    """Detect whether a search string uses PostgreSQL websearch boolean operators."""
+    padded = f" {query.lower()} "
+    return '"' in query or query.startswith("-") or " -" in query or " or " in padded
+
+
+def _tokenize_search_query(query: str) -> tuple[list[str], list[str]]:
+    """Split a search query into positive and excluded lowercase terms."""
+    try:
+        tokens = shlex.split(query)
+    except ValueError:
+        tokens = query.split()
+
+    positive: list[str] = []
+    excluded: list[str] = []
+    for token in tokens:
+        cleaned = token.strip()
+        if not cleaned or cleaned.lower() == "or":
+            continue
+        if cleaned.startswith("-") and len(cleaned) > 1:
+            excluded.append(cleaned[1:].lower())
+        else:
+            positive.append(cleaned.lower())
+    return positive, excluded
+
+
+def _sqlite_fts_score(record: RecipeRecord, query: str) -> float | None:
+    """Compute a PostgreSQL-compatible relevance score fallback for SQLite unit tests."""
+    positive, excluded = _tokenize_search_query(query)
+    title_l = record.title.lower()
+    subtitle_l = record.subtitle.lower()
+    notes_l = record.chef_notes.lower()
+    tags_l = [t.lower() for t in (record.tags or [])]
+    fts_blob = f"{title_l} {subtitle_l} {notes_l}"
+
+    if any(term in fts_blob for term in excluded):
+        return None
+    if not positive:
+        return 0.0
+
+    use_or = " or " in f" {query.lower()} " and not excluded and '"' not in query
+    allow_tags = not _has_websearch_operators(query)
+    score = 0.0
+    matched_count = 0
+
+    for term in positive:
+        term_score = 0.0
+        if term in title_l:
+            term_score += 3.0
+        if term in subtitle_l:
+            term_score += 2.0
+        if term in notes_l:
+            term_score += 1.0
+        if allow_tags and any(term in tag for tag in tags_l):
+            term_score += 0.5
+        if term_score > 0.0:
+            matched_count += 1
+            score += term_score
+
+    if use_or:
+        return score if matched_count > 0 else None
+    return score if matched_count == len(positive) else None
+
+
+def _sort_sqlite_rows(
+    scored_rows: list[tuple[RecipeRecord, float]],
+    sort_by: str,
+) -> list[RecipeRecord]:
+    """Sort eager-loaded recipe rows deterministically in SQLite fallback mode."""
+    ordered = sorted(scored_rows, key=lambda item: item[0].title.lower())
+    if sort_by == "title_asc":
+        return [row for row, _ in ordered]
+    if sort_by == "title_desc":
+        ordered.sort(key=lambda item: item[0].title.lower(), reverse=True)
+        return [row for row, _ in ordered]
+
+    key_map: dict[str, tuple[Any, bool]] = {
+        "relevance": (lambda item: item[1], True),
+        "updated_desc": (lambda item: item[0].updated_at, True),
+        "rating_desc": (lambda item: float(item[0].rating), True),
+        "difficulty_asc": (lambda item: item[0].difficulty, False),
+        "difficulty_desc": (lambda item: item[0].difficulty, True),
+        "active_time_asc": (lambda item: item[0].prep_minutes + item[0].cook_minutes, False),
+        "total_time_asc": (
+            lambda item: item[0].prep_minutes + item[0].cook_minutes + item[0].rest_minutes,
+            False,
+        ),
+    }
+    key_fn, reverse = key_map.get(sort_by, (lambda item: item[0].title.lower(), False))
+    ordered.sort(key=key_fn, reverse=reverse)
+    return [row for row, _ in ordered]
+
+
+def _postgres_order_by(sort_by: str, rank_expr: Any) -> tuple[Any, ...]:
+    """Map sort_by selector to PostgreSQL ORDER BY SQLAlchemy expressions."""
+    if sort_by == "relevance":
+        if rank_expr is not None:
+            return (rank_expr.desc(), RecipeRecord.title.asc())
+        return (RecipeRecord.updated_at.desc(), RecipeRecord.title.asc())
+
+    order_map: dict[str, tuple[Any, ...]] = {
+        "title_asc": (RecipeRecord.title.asc(),),
+        "title_desc": (RecipeRecord.title.desc(),),
+        "updated_desc": (RecipeRecord.updated_at.desc(), RecipeRecord.title.asc()),
+        "rating_desc": (RecipeRecord.rating.desc(), RecipeRecord.title.asc()),
+        "difficulty_asc": (RecipeRecord.difficulty.asc(), RecipeRecord.title.asc()),
+        "difficulty_desc": (RecipeRecord.difficulty.desc(), RecipeRecord.title.asc()),
+        "active_time_asc": (
+            (RecipeRecord.prep_minutes + RecipeRecord.cook_minutes).asc(),
+            RecipeRecord.title.asc(),
+        ),
+        "total_time_asc": (
+            (
+                RecipeRecord.prep_minutes + RecipeRecord.cook_minutes + RecipeRecord.rest_minutes
+            ).asc(),
+            RecipeRecord.title.asc(),
+        ),
+    }
+    return order_map.get(sort_by, (RecipeRecord.title.asc(),))
 
 
 def _to_decimal(value: float | None) -> Decimal | None:
@@ -329,28 +471,142 @@ class RecipeRepository:
             ),
         )
 
+    def _apply_common_recipe_filters(
+        self,
+        stmt: Any,
+        *,
+        category: str | None = None,
+        utensil_id: str | None = None,
+        cookable: bool = False,
+        is_subrecipe: bool | None = None,
+        ing_include: str | None = None,
+        ing_exclude: str | None = None,
+    ) -> Any:
+        """Apply SQL-portable filters shared by PostgreSQL and SQLite."""
+        if category and category.strip():
+            stmt = stmt.where(RecipeRecord.category.ilike(f"%{category.strip()}%"))
+        if is_subrecipe is not None:
+            stmt = stmt.where(RecipeRecord.is_subrecipe.is_(is_subrecipe))
+        if utensil_id and utensil_id.strip():
+            u_slug = utensil_id.strip()
+            stmt = stmt.where(
+                RecipeRecord.utensil_links.any(
+                    RecipeUtensilRecord.utensil.has(UtensilRecord.slug == u_slug)
+                )
+            )
+        if cookable:
+            missing_mandatory = (
+                select(RecipeUtensilRecord.recipe_id)
+                .join(UtensilRecord, UtensilRecord.id == RecipeUtensilRecord.utensil_id)
+                .where(
+                    RecipeUtensilRecord.recipe_id == RecipeRecord.id,
+                    RecipeUtensilRecord.mandatory.is_(True),
+                    UtensilRecord.owned.is_(False),
+                )
+                .exists()
+            )
+            stmt = stmt.where(~missing_mandatory)
+        for term in _parse_csv_terms(ing_include):
+            stmt = stmt.where(
+                RecipeRecord.ingredients.any(
+                    RecipeIngredientRecord.name.ilike(f"%{term}%")
+                    | RecipeIngredientRecord.notes.ilike(f"%{term}%")
+                )
+            )
+        for term in _parse_csv_terms(ing_exclude):
+            stmt = stmt.where(
+                ~RecipeRecord.ingredients.any(
+                    RecipeIngredientRecord.name.ilike(f"%{term}%")
+                    | RecipeIngredientRecord.notes.ilike(f"%{term}%")
+                )
+            )
+        return stmt
+
     def list_recipes(
         self,
         q: str | None = None,
         category: str | None = None,
+        tag: str | None = None,
+        technique: str | None = None,
+        utensil_id: str | None = None,
+        cookable: bool = False,
+        is_subrecipe: bool | None = None,
+        ing_include: str | None = None,
+        ing_exclude: str | None = None,
+        sort_by: RecipeSortBy | None = None,
         limit: int = 100,
         offset: int = 0,
     ) -> list[Recipe]:
-        """List recipes ordered alphabetically with optional category/text filters."""
+        """List recipes with server-side FTS/GIN search, filters, and sorting."""
+        q_clean = q.strip() if q and q.strip() else None
+        tag_clean = tag.strip() if tag and tag.strip() else None
+        tech_clean = technique.strip() if technique and technique.strip() else None
+        effective_sort: str = sort_by or ("relevance" if q_clean else "title_asc")
+
         with self._session_factory() as session:
-            stmt = self._recipe_query()
-            if category:
-                stmt = stmt.where(RecipeRecord.category.ilike(f"%{category.strip()}%"))
-            if q:
-                pattern = f"%{q.strip()}%"
-                stmt = stmt.where(
-                    RecipeRecord.title.ilike(pattern)
-                    | RecipeRecord.subtitle.ilike(pattern)
-                    | RecipeRecord.chef_notes.ilike(pattern)
-                )
-            stmt = stmt.order_by(RecipeRecord.title.asc()).offset(offset).limit(limit)
-            rows = session.scalars(stmt).all()
-            return [_record_to_recipe(row) for row in rows]
+            stmt = self._apply_common_recipe_filters(
+                self._recipe_query(),
+                category=category,
+                utensil_id=utensil_id,
+                cookable=cookable,
+                is_subrecipe=is_subrecipe,
+                ing_include=ing_include,
+                ing_exclude=ing_exclude,
+            )
+            dialect_name = session.bind.dialect.name if session.bind is not None else "sqlite"
+
+            if dialect_name == "postgresql":
+                if tag_clean:
+                    stmt = stmt.where(
+                        type_coerce(RecipeRecord.tags, ARRAY(Text)).contains([tag_clean])
+                    )
+                if tech_clean:
+                    stmt = stmt.where(
+                        type_coerce(RecipeRecord.techniques, ARRAY(Text)).contains([tech_clean])
+                    )
+                rank_expr: Any = None
+                if q_clean:
+                    ts_vec = type_coerce(RecipeRecord.search_tsv, TSVECTOR)
+                    ts_query = func.websearch_to_tsquery("spanish", q_clean)
+                    fts_match = ts_vec.bool_op("@@")(ts_query)
+                    rank_expr = func.ts_rank(ts_vec, ts_query)
+                    if _has_websearch_operators(q_clean):
+                        stmt = stmt.where(fts_match)
+                    else:
+                        q_tokens = list(
+                            dict.fromkeys(tok.lower() for tok in q_clean.split() if tok.strip())
+                        )
+                        stmt = stmt.where(
+                            fts_match
+                            | type_coerce(RecipeRecord.tags, ARRAY(Text)).overlap(q_tokens)
+                            if q_tokens
+                            else fts_match
+                        )
+                stmt = stmt.order_by(*_postgres_order_by(effective_sort, rank_expr))
+                stmt = stmt.offset(offset).limit(limit)
+                return [_record_to_recipe(row) for row in session.scalars(stmt).all()]
+
+            # SQLite fallback for in-memory tests: evaluate JSON array filters and FTS cleanly
+            candidates = list(session.scalars(stmt).all())
+            scored: list[tuple[RecipeRecord, float]] = []
+            for row in candidates:
+                if tag_clean and not any(t.lower() == tag_clean.lower() for t in (row.tags or [])):
+                    continue
+                if tech_clean and not any(
+                    t.lower() == tech_clean.lower() for t in (row.techniques or [])
+                ):
+                    continue
+                score = 0.0
+                if q_clean:
+                    maybe_score = _sqlite_fts_score(row, q_clean)
+                    if maybe_score is None:
+                        continue
+                    score = maybe_score
+                scored.append((row, score))
+
+            ordered_rows = _sort_sqlite_rows(scored, effective_sort)
+            sliced = ordered_rows[offset : offset + limit]
+            return [_record_to_recipe(row) for row in sliced]
 
     def get_recipe(self, slug: str) -> Recipe | None:
         """Fetch a single recipe by its URL-safe slug."""

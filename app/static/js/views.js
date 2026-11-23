@@ -70,27 +70,50 @@ export function populateFilterDropdowns() {
   techSelect.value = currentTech;
 }
 
-export function applyFilters() {
-  const q = (document.getElementById("filter-search")?.value || "").trim();
-  const cookableToday =
-    document.getElementById("filter-cookable-today")?.checked || false;
-  const ingInclude = document.getElementById("filter-ing-include")?.value || "";
-  const ingExclude = document.getElementById("filter-ing-exclude")?.value || "";
-  const category = document.getElementById("filter-category")?.value || "";
-  const subType = document.getElementById("filter-subrecipe")?.value || "all";
-  const utensilId = document.getElementById("filter-utensil")?.value || "";
-  const technique = document.getElementById("filter-technique")?.value || "";
-  const sortBy = document.getElementById("sort-by")?.value || "updated_desc";
+let activeFilterController = null;
+let filterDebounceTimer = null;
 
+export function readFiltersFromDOM() {
+  return {
+    q: (document.getElementById("filter-search")?.value || "").trim(),
+    cookableToday:
+      document.getElementById("filter-cookable-today")?.checked || false,
+    ingInclude: document.getElementById("filter-ing-include")?.value || "",
+    ingExclude: document.getElementById("filter-ing-exclude")?.value || "",
+    category: document.getElementById("filter-category")?.value || "",
+    subType: document.getElementById("filter-subrecipe")?.value || "all",
+    utensilId: document.getElementById("filter-utensil")?.value || "",
+    technique: document.getElementById("filter-technique")?.value || "",
+    sortBy: document.getElementById("sort-by")?.value || "updated_desc",
+  };
+}
+
+function updateRecipeCountLabel() {
+  const countLabel = document.getElementById("recipe-count-label");
+  if (countLabel) {
+    countLabel.textContent =
+      state.filteredRecipes.length === state.allRecipes.length
+        ? `${state.allRecipes.length} recetas`
+        : `${state.filteredRecipes.length} de ${state.allRecipes.length}`;
+  }
+}
+
+export async function applyFilters() {
+  if (filterDebounceTimer) {
+    clearTimeout(filterDebounceTimer);
+    filterDebounceTimer = null;
+  }
+
+  const filters = readFiltersFromDOM();
   state.hasActiveFilters = Boolean(
-    q ||
-      cookableToday ||
-      ingInclude ||
-      ingExclude ||
-      category ||
-      subType !== "all" ||
-      utensilId ||
-      technique
+    filters.q ||
+      filters.cookableToday ||
+      filters.ingInclude ||
+      filters.ingExclude ||
+      filters.category ||
+      filters.subType !== "all" ||
+      filters.utensilId ||
+      filters.technique
   );
 
   const clearBtn = document.getElementById("search-clear-btn");
@@ -100,34 +123,52 @@ export function applyFilters() {
     kbdHint.classList.toggle("is-hidden", state.hasActiveFilters);
   }
 
-  state.filteredRecipes = filterAndSortRecipes(
-    state.allRecipes,
-    {
-      q,
-      cookableToday,
-      ingInclude,
-      ingExclude,
-      category,
-      subType,
-      utensilId,
-      technique,
-      sortBy,
-    },
-    state.utensilsCatalog
-  );
+  if (activeFilterController) {
+    activeFilterController.abort();
+  }
+  const controller = new AbortController();
+  activeFilterController = controller;
 
-  const countLabel = document.getElementById("recipe-count-label");
-  if (countLabel) {
-    countLabel.textContent =
-      state.filteredRecipes.length === state.allRecipes.length
-        ? `${state.allRecipes.length} recetas`
-        : `${state.filteredRecipes.length} de ${state.allRecipes.length}`;
+  try {
+    const res = await api.fetchRecipes(filters, { signal: controller.signal });
+    if (controller.signal.aborted) return;
+    if (res.ok) {
+      state.filteredRecipes = await res.json();
+    } else {
+      state.filteredRecipes = filterAndSortRecipes(
+        state.allRecipes,
+        filters,
+        state.utensilsCatalog
+      );
+    }
+  } catch (err) {
+    if (err && err.name === "AbortError") return;
+    state.filteredRecipes = filterAndSortRecipes(
+      state.allRecipes,
+      filters,
+      state.utensilsCatalog
+    );
+  } finally {
+    if (activeFilterController === controller) {
+      activeFilterController = null;
+    }
   }
 
+  updateRecipeCountLabel();
   renderRecipeList();
 }
 
-export function resetAllFilters() {
+export function scheduleApplyFilters(delayMs = 180) {
+  if (filterDebounceTimer) {
+    clearTimeout(filterDebounceTimer);
+  }
+  filterDebounceTimer = setTimeout(() => {
+    filterDebounceTimer = null;
+    void applyFilters();
+  }, delayMs);
+}
+
+export async function resetAllFilters() {
   const ids = [
     ["filter-search", ""],
     ["filter-ing-include", ""],
@@ -144,7 +185,7 @@ export function resetAllFilters() {
   }
   const cookableEl = document.getElementById("filter-cookable-today");
   if (cookableEl) cookableEl.checked = false;
-  applyFilters();
+  await applyFilters();
 }
 
 export function handleCategoryToggle(detailsEl, categoryName) {

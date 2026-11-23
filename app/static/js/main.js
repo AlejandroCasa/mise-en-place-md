@@ -25,7 +25,7 @@ export async function loadInitialData(selectId = null) {
 
   views.updateUtensilHeaderCounter();
   views.populateFilterDropdowns();
-  views.applyFilters();
+  await views.applyFilters();
 
   if (selectId && state.allRecipes.some((r) => r.id === selectId)) {
     selectRecipe(selectId, { pushHistory: false });
@@ -140,7 +140,7 @@ async function quickToggleUtensilOwned(utensilId) {
   await api.saveUtensilsCatalog(state.utensilsCatalog);
   views.updateUtensilHeaderCounter();
   views.populateFilterDropdowns();
-  views.applyFilters();
+  await views.applyFilters();
   rerenderActiveRecipe();
 }
 
@@ -151,7 +151,7 @@ async function toggleCatalogUtensilOwned(utensilId, isOwned) {
   await api.saveUtensilsCatalog(state.utensilsCatalog);
   views.updateUtensilHeaderCounter();
   views.populateFilterDropdowns();
-  views.applyFilters();
+  await views.applyFilters();
   views.renderUtensilsCatalogModal();
   rerenderActiveRecipe();
 }
@@ -255,7 +255,7 @@ async function handleClickAction(el) {
       );
       break;
     case "reset-filters":
-      views.resetAllFilters();
+      await views.resetAllFilters();
       break;
     case "select-recipe":
       selectRecipe(el.dataset.recipeId || "");
@@ -347,7 +347,7 @@ async function handleChangeAction(el) {
   const action = el.dataset.changeAction;
   switch (action) {
     case "apply-filters":
-      views.applyFilters();
+      await views.applyFilters();
       break;
     case "scale-servings": {
       const factor = computeScaleFactorFromServings(
@@ -410,7 +410,7 @@ function setupEventDelegation() {
     const target = event.target;
     if (!(target instanceof HTMLElement)) return;
     if (target.dataset.inputAction === "apply-filters") {
-      views.applyFilters();
+      views.scheduleApplyFilters();
       return;
     }
     if (target.dataset.editorCollection) {

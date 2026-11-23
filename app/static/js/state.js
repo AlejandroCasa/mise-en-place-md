@@ -61,6 +61,25 @@ export function checkRecipeEquipmentStatus(recipe, utensils = state.utensilsCata
   };
 }
 
+export function buildRecipeQueryParams(filters = {}) {
+  const params = new URLSearchParams();
+  const q = (filters.q || "").trim();
+  if (q) params.set("q", q);
+  if (filters.cookableToday) params.set("cookable", "true");
+  const ingInclude = (filters.ingInclude || "").trim();
+  if (ingInclude) params.set("ing_include", ingInclude);
+  const ingExclude = (filters.ingExclude || "").trim();
+  if (ingExclude) params.set("ing_exclude", ingExclude);
+  if (filters.category) params.set("category", filters.category);
+  if (filters.subType === "main") params.set("is_subrecipe", "false");
+  else if (filters.subType === "sub") params.set("is_subrecipe", "true");
+  if (filters.utensilId) params.set("utensil_id", filters.utensilId);
+  if (filters.technique) params.set("technique", filters.technique);
+  const sortBy = filters.sortBy || (q ? "relevance" : "updated_desc");
+  if (sortBy) params.set("sort_by", sortBy);
+  return params;
+}
+
 export function filterAndSortRecipes(recipes, filters, utensils = state.utensilsCatalog) {
   const q = (filters.q || "").trim().toLowerCase();
   const cookableToday = Boolean(filters.cookableToday);
