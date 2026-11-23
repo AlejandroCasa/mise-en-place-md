@@ -18,6 +18,32 @@ services:
       timeout: 5s
       retries: 10
 
+  mise-en-place:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: mise-en-place-md
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${MISE_PORT:-8001}:8000"
+    environment:
+      MISE_DATABASE_URL: postgresql+psycopg://${POSTGRES_USER:-gastronomy}:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/${POSTGRES_DB:-gastronomy}
+      MISE_VINUM_PULSE_BASE_URL: ${MISE_VINUM_PULSE_BASE_URL:-http://127.0.0.1:8000}
+      MISE_CORS_ORIGINS: ${MISE_CORS_ORIGINS:-http://127.0.0.1:8000,http://127.0.0.1:8001,http://localhost:8000,http://localhost:8001}
+    volumes:
+      - mise_media:/app/data/media
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/healthz', timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
 volumes:
   gastronomy_pgdata:
     name: gastronomy_pgdata
+  mise_media:
+    name: mise_media
