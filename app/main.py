@@ -7,11 +7,11 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI, File, HTTPException, Query, UploadFile
+from fastapi import FastAPI, File, HTTPException, Query, Request, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, PlainTextResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import text
@@ -24,7 +24,7 @@ from app.models import (
     RecipeWineSuggestion,
     UtensilCatalogItem,
 )
-from app.repository import RecipeRepository, safe_media_filename
+from app.repository import RecipeRepository, RecipeSortBy, SubrecipeCycleError, safe_media_filename
 from app.seed import seed_initial_data
 from app.storage import (
     BASE_DIR,
@@ -66,6 +66,18 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(SubrecipeCycleError)
+async def subrecipe_cycle_exception_handler(
+    _request: Request,
+    exc: SubrecipeCycleError,
+) -> JSONResponse:
+    """Return HTTP 422 when saving recipe_subrecipes would introduce a DAG cycle."""
+    return JSONResponse(
+        status_code=422,
+        content={"detail": str(exc), "cycle": exc.cycle_path},
+    )
+
+
 class RawMarkdownPayload(BaseModel):
     """Raw Markdown + YAML frontmatter payload for import/edit."""
 
@@ -82,13 +94,52 @@ def healthz() -> dict[str, str]:
 
 @app.get("/api/recipes", response_model=list[Recipe])
 def api_list_recipes(
-    q: str | None = Query(default=None, description="Optional search text"),
+    q: str | None = Query(
+        default=None,
+        description="Full-text search query (websearch_to_tsquery in Spanish on PostgreSQL)",
+    ),
     category: str | None = Query(default=None, description="Optional category filter"),
+    tag: str | None = Query(default=None, description="Optional tag filter (GIN indexed)"),
+    technique: str | None = Query(default=None, description="Optional technique filter"),
+    utensil: str | None = Query(default=None, description="Optional utensil slug filter"),
+    utensil_id: str | None = Query(default=None, description="Alias for utensil slug filter"),
+    cookable: bool = Query(
+        default=False,
+        description="Filter to recipes whose mandatory utensils are all owned",
+    ),
+    is_subrecipe: bool | None = Query(
+        default=None, description="Filter by sub-recipe flag (true/false)"
+    ),
+    ing_include: str | None = Query(
+        default=None, description="Comma-separated required ingredient terms"
+    ),
+    ing_exclude: str | None = Query(
+        default=None, description="Comma-separated excluded ingredient terms"
+    ),
+    sort_by: Annotated[
+        RecipeSortBy | None,
+        Query(
+            description="Sort order: relevance, title_asc, title_desc, updated_desc, rating_desc, difficulty_asc, difficulty_desc, active_time_asc, total_time_asc",
+        ),
+    ] = None,
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> list[Recipe]:
-    """Return paginated recipes from PostgreSQL."""
-    return repository.list_recipes(q=q, category=category, limit=limit, offset=offset)
+    """Return paginated recipes with server-side FTS search, filters, and sorting."""
+    return repository.list_recipes(
+        q=q,
+        category=category,
+        tag=tag,
+        technique=technique,
+        utensil_id=utensil_id or utensil,
+        cookable=cookable,
+        is_subrecipe=is_subrecipe,
+        ing_include=ing_include,
+        ing_exclude=ing_exclude,
+        sort_by=sort_by,
+        limit=limit,
+        offset=offset,
+    )
 
 
 @app.get("/api/recipes/{recipe_id}", response_model=Recipe)

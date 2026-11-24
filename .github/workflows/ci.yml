@@ -1,0 +1,75 @@
+name: CI Quality Gates & Container Verification
+
+on:
+  push:
+    branches: ["main", "feat/**", "fix/**", "refactor/**", "chore/**"]
+  pull_request:
+    branches: ["main"]
+
+jobs:
+  backend-quality-gates:
+    name: Backend QA, Strict Typing, SAST & Coverage (>=85%)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install uv and Python 3.12
+        uses: astral-sh/setup-uv@v4
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Sync frozen dependencies
+        run: uv sync --frozen
+
+      - name: Lint and format check (Ruff)
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Strict static type check (Mypy)
+        run: uv run mypy --strict app tests
+
+      - name: Static security scan (Bandit)
+        run: uv run bandit -c pyproject.toml -r app/
+
+      - name: Run test suite with zero warnings and >=85% coverage (Pytest)
+        run: uv run pytest -v --cov=app --cov-report=term-missing --cov-fail-under=85
+
+  frontend-tests:
+    name: Frontend Native ES Modules & XSS Guard Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run frontend unit and security tests
+        run: node --test tests/frontend/frontend.test.mjs
+
+  docker-hardening:
+    name: Hardened Multi-Stage Container Verification
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production container image
+        run: docker build -t mise-en-place-md:ci .
+
+      - name: Verify non-root UID 10001, excluded tests, and HEALTHCHECK policy
+        run: |
+          grep -q "uv sync --frozen --no-dev --no-install-project" Dockerfile
+          grep -q "USER appuser" Dockerfile
+          grep -q "HEALTHCHECK" Dockerfile
+          grep -q "/healthz" Dockerfile
+          test "$(docker run --rm --entrypoint id mise-en-place-md:ci -u)" = "10001"
+          docker run --rm --entrypoint sh mise-en-place-md:ci -c "test ! -d /app/tests"

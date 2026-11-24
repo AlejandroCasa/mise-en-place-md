@@ -27,7 +27,7 @@
         <button
           id="btn-kitchen-mode"
           type="button"
-          onclick="toggleKitchenMode()"
+          data-action="toggle-kitchen-mode"
           class="btn btn-ghost"
           title="Aumenta el tamaño de lectura, amplía controles táctiles y mantiene la pantalla activa"
         >
@@ -40,7 +40,7 @@
 
         <button
           type="button"
-          onclick="openUtensilsModal()"
+          data-action="open-utensils-modal"
           class="btn btn-secondary"
           title="Gestionar inventario de utensilios y equipamiento de cocina"
         >
@@ -54,7 +54,7 @@
 
         <button
           type="button"
-          onclick="openRecipeEditor(null)"
+          data-action="open-editor"
           class="btn btn-accent"
         >
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
@@ -83,7 +83,7 @@
             id="filter-search"
             type="text"
             placeholder="Buscar plato, técnica, ingrediente..."
-            oninput="applyFilters()"
+            data-input-action="apply-filters"
             class="search-input"
             aria-label="Buscar recetas"
           />
@@ -91,7 +91,7 @@
           <button
             id="search-clear-btn"
             type="button"
-            onclick="resetAllFilters()"
+            data-action="reset-filters"
             title="Limpiar búsqueda y filtros"
             class="search-clear-btn is-hidden"
             aria-label="Limpiar filtros"
@@ -107,7 +107,7 @@
           <input
             id="filter-cookable-today"
             type="checkbox"
-            onchange="applyFilters()"
+            data-change-action="apply-filters"
           />
         </label>
 
@@ -126,7 +126,7 @@
                   id="filter-ing-include"
                   type="text"
                   placeholder="carrillera, harina"
-                  oninput="applyFilters()"
+                  data-input-action="apply-filters"
                   class="control-input"
                 />
               </div>
@@ -136,7 +136,7 @@
                   id="filter-ing-exclude"
                   type="text"
                   placeholder="lactosa, cerdo"
-                  oninput="applyFilters()"
+                  data-input-action="apply-filters"
                   class="control-input"
                 />
               </div>
@@ -145,13 +145,13 @@
             <div class="filters-grid-2">
               <div>
                 <label for="filter-category" class="field-label">Categoría</label>
-                <select id="filter-category" onchange="applyFilters()" class="control-select">
+                <select id="filter-category" data-change-action="apply-filters" class="control-select">
                   <option value="">Todas</option>
                 </select>
               </div>
               <div>
                 <label for="filter-subrecipe" class="field-label">Tipo de ficha</label>
-                <select id="filter-subrecipe" onchange="applyFilters()" class="control-select">
+                <select id="filter-subrecipe" data-change-action="apply-filters" class="control-select">
                   <option value="all">Platos y bases</option>
                   <option value="main">Solo platos finales</option>
                   <option value="sub">Solo sub-recetas</option>
@@ -162,13 +162,13 @@
             <div class="filters-grid-2">
               <div>
                 <label for="filter-utensil" class="field-label">Utensilio</label>
-                <select id="filter-utensil" onchange="applyFilters()" class="control-select">
+                <select id="filter-utensil" data-change-action="apply-filters" class="control-select">
                   <option value="">Cualquiera</option>
                 </select>
               </div>
               <div>
                 <label for="filter-technique" class="field-label">Técnica</label>
-                <select id="filter-technique" onchange="applyFilters()" class="control-select">
+                <select id="filter-technique" data-change-action="apply-filters" class="control-select">
                   <option value="">Todas</option>
                 </select>
               </div>
@@ -180,8 +180,9 @@
           <span id="recipe-count-label" class="rail-count">0 recetas</span>
           <div class="sort-inline">
             <label for="sort-by" class="sr-only" style="position:absolute;width:1px;height:1px;overflow:hidden;">Ordenar por</label>
-            <select id="sort-by" onchange="applyFilters()">
+            <select id="sort-by" data-change-action="apply-filters">
               <option value="updated_desc">Recientes</option>
+              <option value="relevance">Relevancia (FTS)</option>
               <option value="rating_desc">Valoración</option>
               <option value="difficulty_asc">Dificultad ↑</option>
               <option value="difficulty_desc">Dificultad ↓</option>
@@ -194,14 +195,14 @@
       </div>
 
       <div id="recipe-list-container" class="recipe-list">
-        <!-- Renderizado por app.js -->
+        <!-- Renderizado por módulos ES (static/js/views.js) -->
       </div>
     </aside>
 
     <!-- Panel Derecho: Ficha Técnica / Editor -->
     <main class="detail-workspace">
       <div id="recipe-detail-container">
-        <!-- Renderizado por app.js -->
+        <!-- Renderizado por módulos ES -->
       </div>
     </main>
   </div>
@@ -216,7 +217,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="utensils-modal-title"
-    onclick="if (event.target === this) closeUtensilsModal()"
+    data-backdrop-close="utensils-modal"
   >
     <div class="modal-dialog">
       <div class="modal-header">
@@ -224,7 +225,7 @@
           <h2 id="utensils-modal-title" class="modal-title">Inventario de Utensilios y Equipamiento</h2>
           <p class="modal-subtitle">Marca el equipo disponible en tu cocina para filtrar recetas realizables hoy.</p>
         </div>
-        <button type="button" onclick="closeUtensilsModal()" class="btn btn-ghost btn-sm" aria-label="Cerrar">
+        <button type="button" data-action="close-utensils-modal" class="btn btn-ghost btn-sm" aria-label="Cerrar">
           <svg class="icon" viewBox="0 0 24 24">
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
@@ -263,7 +264,7 @@
             />
           </div>
           <div class="col-2">
-            <button type="button" onclick="addNewCatalogUtensil()" class="btn btn-accent" style="width: 100%;">
+            <button type="button" data-action="add-catalog-utensil" class="btn btn-accent" style="width: 100%;">
               Añadir
             </button>
           </div>
@@ -271,12 +272,12 @@
       </div>
 
       <div id="utensils-catalog-list" class="modal-body" style="display: flex; flex-direction: column; gap: 18px;">
-        <!-- Renderizado por app.js -->
+        <!-- Renderizado por módulos ES -->
       </div>
 
       <div class="modal-footer">
         <span>Sincronizado con PostgreSQL (<code class="font-mono">culinary.utensils</code>)</span>
-        <button type="button" onclick="closeUtensilsModal()" class="btn btn-primary btn-sm">Cerrar</button>
+        <button type="button" data-action="close-utensils-modal" class="btn btn-primary btn-sm">Cerrar</button>
       </div>
     </div>
   </div>
@@ -288,7 +289,7 @@
     role="dialog"
     aria-modal="true"
     aria-labelledby="md-modal-title"
-    onclick="if (event.target === this) closeMarkdownModal()"
+    data-backdrop-close="markdown-modal"
   >
     <div class="modal-dialog modal-dialog-wide">
       <div class="modal-header">
@@ -299,7 +300,7 @@
           </h2>
           <p class="modal-subtitle">Exportación compatible con Obsidian. Al guardar se actualiza el registro en PostgreSQL.</p>
         </div>
-        <button type="button" onclick="closeMarkdownModal()" class="btn btn-ghost btn-sm" aria-label="Cerrar">
+        <button type="button" data-action="close-markdown-modal" class="btn btn-ghost btn-sm" aria-label="Cerrar">
           <svg class="icon" viewBox="0 0 24 24">
             <path d="M18 6 6 18M6 6l12 12" />
           </svg>
@@ -312,17 +313,17 @@
 
       <div class="modal-footer">
         <div style="display: flex; gap: 8px;">
-          <button type="button" onclick="downloadRawMarkdown()" class="btn btn-secondary btn-sm">Descargar .md</button>
-          <button id="btn-copy-md" type="button" onclick="copyRawMarkdown()" class="btn btn-secondary btn-sm">Copiar</button>
+          <button type="button" data-action="download-markdown" class="btn btn-secondary btn-sm">Descargar .md</button>
+          <button id="btn-copy-md" type="button" data-action="copy-markdown" class="btn btn-secondary btn-sm">Copiar</button>
         </div>
         <div style="display: flex; gap: 8px;">
-          <button type="button" onclick="closeMarkdownModal()" class="btn btn-ghost btn-sm">Cancelar</button>
-          <button type="button" onclick="saveRawMarkdownChanges()" class="btn btn-accent btn-sm">Guardar cambios</button>
+          <button type="button" data-action="close-markdown-modal" class="btn btn-ghost btn-sm">Cancelar</button>
+          <button type="button" data-action="save-markdown" class="btn btn-accent btn-sm">Guardar cambios</button>
         </div>
       </div>
     </div>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script type="module" src="/static/js/main.js"></script>
 </body>
 </html>
