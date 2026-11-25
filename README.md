@@ -65,6 +65,7 @@ Configured via environment variables or `.env` (see `.env.example`):
 | `MISE_PORT` | `8001` | HTTP bind port (coexists alongside Vinum Pulse on `8000`) |
 | `MISE_DATABASE_URL` | `sqlite:///./mise_en_place.db` | SQLAlchemy 2.0 connection URL (`postgresql+psycopg://...` in Docker/Postgres mode) |
 | `MISE_VINUM_PULSE_BASE_URL` | `http://127.0.0.1:8000` | Base URL for cross-service Vinum Pulse sommelier integration |
+| `MISE_MAX_UPLOAD_BYTES` | `5242880` | Max image upload size in bytes before returning HTTP `413` |
 | `MISE_CORS_ORIGINS` | `http://127.0.0.1:8000,http://127.0.0.1:8001,...` | Comma-separated allowed CORS origins |
 | `POSTGRES_DB` | `gastronomy` | Shared PostgreSQL database name (`docker-compose.yml`) |
 | `POSTGRES_USER` | `gastronomy` | Shared PostgreSQL user (`docker-compose.yml`) |
@@ -85,11 +86,17 @@ make check  # Full 1:1 local/CI parity gate (README/Makefile contract, lockfile,
 ├── alembic/            # Incremental database schema migrations
 ├── app/
 │   ├── static/         # Modular native ES6 frontend (js/*.js, index.html, styles.css)
+│   ├── capture.py      # Deterministic freeform quick-capture recipe parser
+│   ├── costing.py      # Ingredient food costing & combined wine per-guest economics
 │   ├── database.py     # Settings & SQLAlchemy 2.0 multi-schema engine
 │   ├── db_models.py    # ORM entities (culinary, enology, pairing)
 │   ├── main.py         # FastAPI endpoints & lifespan bootstrap
 │   ├── models.py       # Strict Pydantic v2 domain contracts
-│   └── repository.py   # Server-side PostgreSQL FTS, filtering, and DAG cycle guard
+│   ├── observability.py# Structured JSON logging & X-Request-ID correlation middleware
+│   ├── pairing_cellar.py # Live enology.cellar_items matching & reverse bottle-to-recipe
+│   ├── planner.py      # Multi-course DAG shopping explosion & reverse decant timeline
+│   ├── repository.py   # Server-side PostgreSQL FTS, filtering, and DAG cycle guard
+│   └── upload_security.py # Magic-byte check, max payload guard, EXIF strip & WebP output
 ├── db/init/            # PostgreSQL 16 schema & GIN index initialization scripts
 ├── tests/              # Backend pytest suite & native ES module tests (tests/frontend/)
 ├── Dockerfile          # Multi-stage non-root container image (UID >= 10001)
