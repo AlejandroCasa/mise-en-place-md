@@ -7,6 +7,12 @@ import { ICONS } from "./constants.js";
 import { escapeHtml, state } from "./state.js";
 import { renderEmptyState, renderRecipeDetail } from "./views.js";
 
+export function openDraftInEditor(draft) {
+  state.editingOriginalId = null;
+  state.editingDraft = structuredClone(draft);
+  renderRecipeEditor();
+}
+
 export function openRecipeEditor(recipeId = null) {
   state.editingOriginalId = recipeId;
   if (recipeId) {
@@ -322,11 +328,14 @@ export function renderRecipeEditor() {
               <div class="col-2">
                 <input type="text" value="${escapeHtml(ing.group || "Principal")}" data-editor-collection="ingredients" data-index="${idx}" data-field="group" data-kind="string" placeholder="Grupo" class="control-input" />
               </div>
-              <div class="col-3">
-                <input type="text" value="${escapeHtml(ing.notes || "")}" data-editor-collection="ingredients" data-index="${idx}" data-field="notes" data-kind="string" placeholder="Corte / nota" class="control-input" />
+              <div class="col-2">
+                <input type="number" step="0.01" min="0" value="${ing.unit_cost_eur ?? ""}" data-editor-collection="ingredients" data-index="${idx}" data-field="unit_cost_eur" data-kind="nullable-float" placeholder="€/kg·l·ud" title="Coste unitario opcional (€/kg, €/l o €/ud)" class="control-input font-mono" />
               </div>
-              <div class="col-2" style="display: flex; align-items: center; justify-content: flex-end; gap: 8px;">
-                <label class="font-mono" style="font-size: 11px; display: flex; align-items: center; gap: 4px; cursor: pointer;" title="Base 100%">
+              <div class="col-2">
+                <input type="text" value="${escapeHtml(ing.notes || "")}" data-editor-collection="ingredients" data-index="${idx}" data-field="notes" data-kind="string" placeholder="Nota" class="control-input" />
+              </div>
+              <div class="col-1" style="display: flex; align-items: center; justify-content: flex-end; gap: 6px;">
+                <label class="font-mono" style="font-size: 11px; display: flex; align-items: center; gap: 3px; cursor: pointer;" title="Base 100%">
                   <input type="checkbox" ${ing.is_base_weight ? "checked" : ""} data-editor-collection="ingredients" data-index="${idx}" data-field="is_base_weight" data-kind="checkbox" style="accent-color: var(--flame-blue);" />
                   <span>100%</span>
                 </label>
@@ -535,6 +544,7 @@ export function editorAddRow(collection) {
       unit: "g",
       group: "Principal",
       is_base_weight: false,
+      unit_cost_eur: null,
       notes: "",
     });
   } else if (collection === "steps") {

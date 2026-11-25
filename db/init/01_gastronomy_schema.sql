@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS culinary.recipe_ingredients (
     unit             text NOT NULL DEFAULT 'g',
     ingredient_group text NOT NULL DEFAULT 'Principal',
     is_base_weight   boolean NOT NULL DEFAULT false,
+    unit_cost_eur    numeric(10, 4),
     notes            text NOT NULL DEFAULT ''
 );
 

@@ -4,6 +4,7 @@
 
 import * as api from "./api.js";
 import * as editor from "./editor.js";
+import * as planner from "./planner.js";
 import {
   computeScaleFactorFromBaseWeight,
   computeScaleFactorFromServings,
@@ -25,6 +26,7 @@ export async function loadInitialData(selectId = null) {
 
   views.updateUtensilHeaderCounter();
   views.populateFilterDropdowns();
+  views.renderPantryQuickBar();
   await views.applyFilters();
 
   if (selectId && state.allRecipes.some((r) => r.id === selectId)) {
@@ -95,6 +97,11 @@ export async function loadWineSuggestion(recipeId) {
     state.wineSuggestionCache.set(recipeId, data);
     if (state.activeRecipeId === recipeId) {
       views.renderWineSuggestionSlot(slot, data);
+      const costSlot = document.getElementById("recipe-costing-slot");
+      const activeRecipe = state.allRecipes.find((r) => r.id === recipeId);
+      if (costSlot && activeRecipe) {
+        costSlot.innerHTML = views.renderCostingStripHtml(activeRecipe);
+      }
     }
   } catch {
     if (state.activeRecipeId === recipeId) views.renderWineSuggestionSlot(slot, null);
@@ -117,6 +124,7 @@ async function saveQuickIteration(recipeId) {
     new Date().toISOString().slice(0, 10);
   const changes = document.getElementById("quick-it-changes")?.value.trim() || "";
   const next_steps = document.getElementById("quick-it-next")?.value.trim() || "";
+  const photo = document.getElementById("quick-it-photo")?.value.trim() || "";
 
   if (!changes) {
     alert("Escribe los cambios o resultados de la prueba.");
@@ -125,7 +133,7 @@ async function saveQuickIteration(recipeId) {
 
   const updated = structuredClone(recipe);
   updated.iterations = updated.iterations || [];
-  updated.iterations.push({ version, date, changes, next_steps });
+  updated.iterations.push({ version, date, changes, next_steps, photo, metrics: {} });
 
   const res = await api.saveRecipePayload(updated, recipeId);
   if (res.ok) {
@@ -203,11 +211,133 @@ async function saveRawMarkdownChanges() {
   }
 }
 
+async function submitQuickCapture(saveDirectly) {
+  const textEl = document.getElementById("quick-capture-text");
+  const catEl = document.getElementById("quick-capture-category");
+  const rawText = (textEl?.value || "").trim();
+  if (!rawText) {
+    alert("Pega el texto o notas de la receta para capturar.");
+    return;
+  }
+  const category = (catEl?.value || "Principal").trim() || "Principal";
+  const res = await api.quickCaptureRecipe(rawText, category, saveDirectly);
+  if (!res.ok) {
+    alert("No se pudo interpretar el texto rápido.");
+    return;
+  }
+  const recipe = await res.json();
+  planner.closeQuickCaptureModal();
+  if (textEl) textEl.value = "";
+  if (saveDirectly) {
+    await loadInitialData(recipe.id);
+  } else {
+    editor.openDraftInEditor(recipe);
+  }
+}
+
+async function togglePantryTerm(term) {
+  if (!term) return;
+  if (state.pantrySelection.has(term)) state.pantrySelection.delete(term);
+  else state.pantrySelection.add(term);
+
+  const includeEl = document.getElementById("filter-ing-include");
+  if (includeEl) {
+    includeEl.value = Array.from(state.pantrySelection).join(", ");
+  }
+  views.renderPantryQuickBar();
+  await views.applyFilters();
+}
+
+async function clearPantrySelection() {
+  state.pantrySelection.clear();
+  const includeEl = document.getElementById("filter-ing-include");
+  if (includeEl) includeEl.value = "";
+  views.renderPantryQuickBar();
+  await views.applyFilters();
+}
+
+async function uploadQuickIterationPhoto(inputEl) {
+  if (!inputEl.files || !inputEl.files[0]) return;
+  const res = await api.uploadMediaFile(inputEl.files[0]);
+  if (res.ok) {
+    const data = await res.json();
+    const photoInput = document.getElementById("quick-it-photo");
+    if (photoInput) photoInput.value = data.url;
+  } else {
+    alert("La imagen no pudo procesarse (formato o tamaño no válido).");
+  }
+}
+
 async function handleClickAction(el) {
   const action = el.dataset.action;
   switch (action) {
     case "toggle-kitchen-mode":
-      await timers.toggleKitchenMode();
+      await timers.toggleKitchenMode(() => rerenderActiveRecipe());
+      break;
+    case "kitchen-prev-step":
+      state.kitchenStepIndex = Math.max(0, state.kitchenStepIndex - 1);
+      rerenderActiveRecipe();
+      break;
+    case "kitchen-next-step":
+      state.kitchenStepIndex += 1;
+      rerenderActiveRecipe();
+      break;
+    case "kitchen-complete-step": {
+      const idx = parseInt(el.dataset.index || "0", 10);
+      state.checkedSteps.add(idx);
+      state.kitchenStepIndex = idx + 1;
+      rerenderActiveRecipe();
+      break;
+    }
+    case "open-menu-planner":
+      planner.openMenuPlannerModal();
+      break;
+    case "close-menu-planner":
+      planner.closeMenuPlannerModal();
+      break;
+    case "add-menu-course":
+      planner.addMenuCourse();
+      break;
+    case "remove-menu-course":
+      planner.removeMenuCourse(parseInt(el.dataset.index || "-1", 10));
+      break;
+    case "run-menu-plan":
+      await planner.runMenuPlan();
+      break;
+    case "copy-shopping-list":
+      await planner.copyMenuShoppingList();
+      break;
+    case "open-cellar-modal":
+      await planner.openCellarModal();
+      break;
+    case "close-cellar-modal":
+      planner.closeCellarModal();
+      break;
+    case "select-cellar-bottle":
+      await planner.selectCellarBottle(el.dataset.wineSlug || "");
+      break;
+    case "open-recipe-from-modal":
+      planner.closeCellarModal();
+      planner.closeMenuPlannerModal();
+      selectRecipe(el.dataset.recipeId || "");
+      break;
+    case "open-quick-capture":
+      planner.openQuickCaptureModal();
+      break;
+    case "close-quick-capture":
+      planner.closeQuickCaptureModal();
+      break;
+    case "quick-capture-preview":
+      await submitQuickCapture(false);
+      break;
+    case "quick-capture-save":
+      await submitQuickCapture(true);
+      break;
+    case "toggle-pantry-chip":
+      await togglePantryTerm(el.dataset.term || "");
+      break;
+    case "clear-pantry-chips":
+      await clearPantrySelection();
       break;
     case "open-utensils-modal":
       views.openUtensilsModal();
@@ -383,6 +513,31 @@ async function handleChangeAction(el) {
     case "upload-step-photo":
       await editor.uploadStepPhoto(el, parseInt(el.dataset.index || "0", 10));
       break;
+    case "upload-quick-it-photo":
+      await uploadQuickIterationPhoto(el);
+      break;
+    case "menu-course-recipe":
+      planner.updateMenuCourseField(
+        parseInt(el.dataset.index || "-1", 10),
+        "recipe_slug",
+        el.value
+      );
+      break;
+    case "menu-course-servings":
+      planner.updateMenuCourseField(
+        parseInt(el.dataset.index || "-1", 10),
+        "servings",
+        el.value
+      );
+      break;
+    case "compare-iter-a":
+      state.iterationCompareA = parseInt(el.value || "0", 10);
+      rerenderActiveRecipe();
+      break;
+    case "compare-iter-b":
+      state.iterationCompareB = parseInt(el.value || "0", 10);
+      rerenderActiveRecipe();
+      break;
     default:
       break;
   }
@@ -397,6 +552,9 @@ function setupEventDelegation() {
       const modalId = target.dataset.backdropClose;
       if (modalId === "utensils-modal") views.closeUtensilsModal();
       if (modalId === "markdown-modal") views.closeMarkdownModal();
+      if (modalId === "cellar-modal") planner.closeCellarModal();
+      if (modalId === "menu-planner-modal") planner.closeMenuPlannerModal();
+      if (modalId === "quick-capture-modal") planner.closeQuickCaptureModal();
       return;
     }
 
@@ -459,6 +617,20 @@ function setupKeyboardShortcuts() {
     if (event.key === "Escape") {
       views.closeUtensilsModal();
       views.closeMarkdownModal();
+      planner.closeCellarModal();
+      planner.closeMenuPlannerModal();
+      planner.closeQuickCaptureModal();
+      return;
+    }
+
+    if (state.kitchenModeActive && !isTyping) {
+      if (event.key === "ArrowLeft") {
+        state.kitchenStepIndex = Math.max(0, state.kitchenStepIndex - 1);
+        rerenderActiveRecipe();
+      } else if (event.key === "ArrowRight") {
+        state.kitchenStepIndex += 1;
+        rerenderActiveRecipe();
+      }
     }
   });
 }

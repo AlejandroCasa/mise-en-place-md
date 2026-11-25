@@ -45,6 +45,11 @@ class Ingredient(BaseModel):
         default=False,
         description="Si forma parte del 100% de referencia para porcentaje de panadero / peso base",
     )
+    unit_cost_eur: float | None = Field(
+        default=None,
+        ge=0,
+        description="Coste unitario de referencia en EUR (€/kg, €/l o €/ud según unidad)",
+    )
     notes: str = Field(
         default="", description="Corte, maduración, temperatura o calidad (ej. brunoise fina)"
     )
@@ -89,6 +94,11 @@ class IterationEntry(BaseModel):
     changes: str = Field(..., description="Ajustes realizados y resultado obtenido")
     next_steps: str = Field(
         default="", description="Hipótesis o mejoras para la siguiente iteración"
+    )
+    photo: str = Field(default="", description="Ruta relativa de foto asociada a esta iteración")
+    metrics: dict[str, str] = Field(
+        default_factory=dict,
+        description="Parámetros medidos opcionales (ej. hidratación, pH, merma)",
     )
 
 
@@ -165,9 +175,14 @@ class WineSuggestionItem(BaseModel):
     vintage: int = Field(..., description="Harvest vintage year")
     price_eur: float = Field(..., description="Reference bottle price in EUR")
     serving_temp_c: float = Field(..., description="Recommended serving temperature in Celsius")
+    decant_minutes: int = Field(default=0, description="Recommended decanting time in minutes")
     glass_type: str = Field(..., description="Recommended glassware")
     tagline: str = Field(default="", description="Short sommelier hook")
     vinum_url: str = Field(..., description="Deep link to wine detail in Vinum Pulse")
+    cellar_quantity: int = Field(
+        default=0, description="Available bottle count in enology.cellar_items"
+    )
+    cellar_location: str = Field(default="", description="Storage rack/location in user's cellar")
 
 
 class RecipeWineSuggestion(BaseModel):
@@ -191,6 +206,137 @@ class RecipeWineSuggestion(BaseModel):
         default_factory=list, description="Culinary tags/ingredients that drove typology inference"
     )
     rationale: str = Field(..., description="Human-readable sommelier rationale")
+    cellar_available_count: int = Field(
+        default=0,
+        description="Total compatible bottles currently stored in enology.cellar_items",
+    )
+    cellar_matches: list[WineSuggestionItem] = Field(
+        default_factory=list,
+        description="Compatible wines already present in the user's cellar",
+    )
+
+
+class CellarBottleSummary(BaseModel):
+    """Cellar bottle inventory item joined with Vinum Pulse wine metadata."""
+
+    wine: WineSuggestionItem
+    quantity: int = Field(..., ge=0)
+    purchase_price_eur: float = Field(default=0.0, ge=0)
+    storage_location: str = Field(default="")
+    notes: str = Field(default="")
+
+
+class CellarRecipeMatch(BaseModel):
+    """Ranked recipe match for a bottle selected from the user's cellar."""
+
+    recipe_slug: str
+    recipe_title: str
+    category: str
+    difficulty: int
+    total_minutes: int
+    compatibility_score: float = Field(..., ge=0.0, le=100.0)
+    dominant_wine_type: str
+    resolution_source: str
+    matched_keywords: list[str] = Field(default_factory=list)
+    rationale: str
+
+
+class CellarBottleRecipesResponse(BaseModel):
+    """Reverse pairing response: best recipes to cook with an opened cellar bottle."""
+
+    bottle: CellarBottleSummary
+    matches: list[CellarRecipeMatch] = Field(default_factory=list)
+
+
+class MenuCourseInput(BaseModel):
+    """Single course selection inside a multi-course dinner service."""
+
+    recipe_slug: str = Field(..., min_length=1)
+    servings: float = Field(default=4.0, gt=0, le=200)
+
+
+class MenuPlanRequest(BaseModel):
+    """Request payload for multi-course service planning."""
+
+    courses: list[MenuCourseInput] = Field(..., min_length=1, max_length=8)
+    service_time: str = Field(
+        default="21:00",
+        pattern=r"^\d{2}:\d{2}$",
+        description="Target dinner service clock time (HH:MM)",
+    )
+
+
+class ShoppingListItem(BaseModel):
+    """Aggregated ingredient line across courses and exploded sub-recipe DAGs."""
+
+    name: str
+    total_amount: float | None = None
+    unit: str
+    sources: list[str] = Field(default_factory=list)
+    estimated_cost_eur: float | None = None
+
+
+class MenuTimelineStep(BaseModel):
+    """Reverse countdown milestone prior to target service time."""
+
+    offset_minutes: int = Field(..., ge=0, description="Minutes before service time")
+    clock_time: str = Field(..., description="Formatted HH:MM target clock time")
+    kind: Literal["rest", "subrecipe", "prep", "cook", "wine_decant", "wine_chill", "service"]
+    title: str
+    detail: str
+    course_title: str = ""
+
+
+class MenuCourseSummary(BaseModel):
+    """Scaled course summary with wine pairing and per-guest economics."""
+
+    course_number: int
+    recipe_slug: str
+    recipe_title: str
+    category: str
+    servings: float
+    food_cost_eur: float | None = None
+    wine: WineSuggestionItem | None = None
+    subrecipes_used: list[str] = Field(default_factory=list)
+
+
+class MenuPlanResponse(BaseModel):
+    """Complete multi-course service plan: courses, DAG shopping list, reverse timeline & costs."""
+
+    service_time: str
+    guest_count: float
+    courses: list[MenuCourseSummary]
+    shopping_list: list[ShoppingListItem]
+    timeline: list[MenuTimelineStep]
+    total_food_cost_eur: float | None = None
+    total_wine_cost_eur: float | None = None
+    total_menu_cost_eur: float | None = None
+    cost_per_guest_eur: float | None = None
+
+
+class RecipeCostSummary(BaseModel):
+    """Food costing & optional paired wine cost breakdown per serving."""
+
+    recipe_slug: str
+    servings: float
+    priced_ingredients: int
+    total_ingredients: int
+    total_food_cost_eur: float | None = None
+    food_cost_per_serving_eur: float | None = None
+    paired_wine_price_eur: float | None = None
+    paired_wine_per_serving_eur: float | None = None
+    total_cost_per_guest_eur: float | None = None
+
+
+class QuickCaptureRequest(BaseModel):
+    """Freeform culinary text or minimal Markdown payload for quick draft creation."""
+
+    raw_text: str = Field(..., min_length=3, max_length=20000)
+    category: str = Field(default="Principal")
+    save: bool = Field(
+        default=False,
+        description="If true, persist draft directly in DB; otherwise return parsed draft",
+    )
 
 
 class DishRecipeLinkRequest(BaseModel):
