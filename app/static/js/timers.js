@@ -116,9 +116,14 @@ export function renderTimersDock() {
     .join("");
 }
 
-export async function toggleKitchenMode() {
+export async function toggleKitchenMode(onChanged = null) {
   document.body.classList.toggle("kitchen-mode");
   const isActive = document.body.classList.contains("kitchen-mode");
+  state.kitchenModeActive = isActive;
+  if (isActive) {
+    state.kitchenStepIndex = 0;
+  }
+
   const btn = document.getElementById("btn-kitchen-mode");
   if (btn) {
     btn.classList.toggle("btn-kitchen-active", isActive);
@@ -127,11 +132,23 @@ export async function toggleKitchenMode() {
   try {
     if (isActive && "wakeLock" in navigator) {
       state.wakeLockSentinel = await navigator.wakeLock.request("screen");
+      state.wakeLockActive = true;
+      state.wakeLockSentinel.addEventListener("release", () => {
+        state.wakeLockActive = false;
+        if (typeof onChanged === "function") onChanged();
+      });
     } else if (!isActive && state.wakeLockSentinel) {
       await state.wakeLockSentinel.release();
       state.wakeLockSentinel = null;
+      state.wakeLockActive = false;
+    } else {
+      state.wakeLockActive = false;
     }
   } catch {
-    // Wake Lock optional
+    state.wakeLockActive = false;
+  }
+
+  if (typeof onChanged === "function") {
+    onChanged();
   }
 }

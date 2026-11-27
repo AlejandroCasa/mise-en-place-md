@@ -16,12 +16,24 @@ export const state = {
   activeTimers: [],
   timerInterval: null,
   wakeLockSentinel: null,
+  wakeLockActive: false,
+  kitchenModeActive: false,
+  kitchenStepIndex: 0,
   wineSuggestionCache: new Map(),
   openCategories: new Set(),
   hasActiveFilters: false,
   editingDraft: null,
   editingOriginalId: null,
   currentMdRecipeId: null,
+  pantrySelection: new Set(),
+  cellarBottles: [],
+  selectedCellarBottleSlug: null,
+  cellarBottleMatches: null,
+  menuPlanCourses: [],
+  menuPlanServiceTime: "21:00",
+  menuPlanResult: null,
+  iterationCompareA: 0,
+  iterationCompareB: 1,
 };
 
 export function extractSlugFromPath(pathname) {
@@ -233,4 +245,127 @@ export function escapeHtml(str) {
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;")
     .replace(/'/g, "&#039;");
+}
+
+const STOPWORDS_ES = new Set([
+  "de",
+  "del",
+  "la",
+  "el",
+  "los",
+  "las",
+  "con",
+  "sin",
+  "para",
+  "en",
+  "al",
+  "y",
+  "o",
+  "un",
+  "una",
+  "extra",
+  "virgen",
+  "fresco",
+  "fresca",
+]);
+
+export function matchIngredientsForStep(step, ingredients = [], scaleFactor = 1.0) {
+  if (!step || !Array.isArray(ingredients) || ingredients.length === 0) {
+    return { matched: [], isContextual: false };
+  }
+  const stepText = `${step.title || ""} ${step.instruction || ""}`.toLowerCase();
+  const matched = [];
+  for (const ing of ingredients) {
+    const tokens = String(ing.name || "")
+      .toLowerCase()
+      .split(/[\s,()/-]+/)
+      .filter((t) => t.length >= 4 && !STOPWORDS_ES.has(t));
+    const hits = tokens.some((tok) => stepText.includes(tok));
+    if (hits) {
+      matched.push({
+        ...ing,
+        scaledAmount:
+          ing.amount !== null && ing.amount !== undefined
+            ? formatNumber(ing.amount * scaleFactor)
+            : "",
+      });
+    }
+  }
+  if (matched.length > 0) {
+    return { matched, isContextual: true };
+  }
+  return {
+    matched: ingredients.slice(0, 6).map((ing) => ({
+      ...ing,
+      scaledAmount:
+        ing.amount !== null && ing.amount !== undefined
+          ? formatNumber(ing.amount * scaleFactor)
+          : "",
+    })),
+    isContextual: false,
+  };
+}
+
+export function computeRecipeCostMetrics(recipe, wineSuggestion = null, scaleFactor = 1.0) {
+  const ingredients = recipe?.ingredients || [];
+  let pricedCount = 0;
+  let totalFood = 0;
+  for (const ing of ingredients) {
+    if (ing.unit_cost_eur === null || ing.unit_cost_eur === undefined || ing.amount === null || ing.amount === undefined) {
+      continue;
+    }
+    let qty = Number(ing.amount) * scaleFactor;
+    const unit = String(ing.unit || "").trim().toLowerCase();
+    if (unit === "g" || unit === "gr" || unit === "ml") qty /= 1000;
+    else if (unit === "cl") qty /= 100;
+    totalFood += qty * Number(ing.unit_cost_eur);
+    pricedCount += 1;
+  }
+
+  const baseServings = Number(recipe?.servings) || 1;
+  const scaledServings = Math.max(0.1, baseServings * scaleFactor);
+  const foodTotal = pricedCount > 0 ? Math.round(totalFood * 100) / 100 : null;
+  const foodPerServing = foodTotal !== null ? Math.round((foodTotal / scaledServings) * 100) / 100 : null;
+  const winePrice = wineSuggestion?.recommended_wine?.price_eur ?? null;
+  const winePerServing = winePrice !== null ? Math.round((Number(winePrice) / scaledServings) * 100) / 100 : null;
+
+  let totalPerGuest = null;
+  if (foodPerServing !== null && winePerServing !== null) {
+    totalPerGuest = Math.round((foodPerServing + winePerServing) * 100) / 100;
+  } else if (foodPerServing !== null) {
+    totalPerGuest = foodPerServing;
+  } else if (winePerServing !== null) {
+    totalPerGuest = winePerServing;
+  }
+
+  return {
+    pricedCount,
+    totalIngredients: ingredients.length,
+    foodTotal,
+    foodPerServing,
+    winePrice: winePrice !== null ? Number(winePrice) : null,
+    winePerServing,
+    totalPerGuest,
+  };
+}
+
+export function extractTopPantryTerms(recipes = [], limit = 8) {
+  const counts = new Map();
+  for (const r of recipes) {
+    if (r.is_subrecipe) continue;
+    const seenInRecipe = new Set();
+    for (const ing of r.ingredients || []) {
+      const raw = String(ing.name || "").trim().toLowerCase();
+      const head = raw.split(/\s+de\s+|\s+/)[0]?.replace(/[^a-záéíóúñü]/gi, "") || "";
+      if (head.length < 4 || STOPWORDS_ES.has(head) || head === "agua" || head === "sal") continue;
+      if (!seenInRecipe.has(head)) {
+        seenInRecipe.add(head);
+        counts.set(head, (counts.get(head) || 0) + 1);
+      }
+    }
+  }
+  return Array.from(counts.entries())
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0], "es"))
+    .slice(0, limit)
+    .map(([term]) => term);
 }

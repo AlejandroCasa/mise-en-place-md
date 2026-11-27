@@ -158,11 +158,12 @@ def render_recipe_markdown(recipe: Recipe) -> str:
     return "\n".join(lines).rstrip() + "\n"
 
 
-def parse_recipe_markdown(filepath: Path) -> Recipe | None:
-    """Lee un archivo .md con YAML Frontmatter y devuelve un objeto Recipe validado."""
-    if not filepath.exists():
-        return None
-    content = filepath.read_text(encoding="utf-8")
+def parse_recipe_markdown_text(
+    content: str,
+    fallback_slug: str = "receta",
+    strict_yaml: bool = False,
+) -> Recipe | None:
+    """Parse raw Markdown + YAML frontmatter in memory into a validated Recipe."""
     frontmatter_match = re.match(r"^---\s*\r?\n(.*?)\r?\n---\s*(?:\r?\n(.*))?$", content, re.DOTALL)
     if frontmatter_match:
         yaml_text = frontmatter_match.group(1)
@@ -170,22 +171,39 @@ def parse_recipe_markdown(filepath: Path) -> Recipe | None:
         try:
             data = yaml.safe_load(yaml_text) or {}
         except Exception:
+            if strict_yaml:
+                return None
             data = {}
     else:
         data = {}
         body_text = content.strip()
 
     if not isinstance(data, dict):
+        if strict_yaml:
+            return None
         data = {}
 
     if not data.get("id"):
-        data["id"] = filepath.stem
+        data["id"] = fallback_slug
     if not data.get("title"):
-        data["title"] = filepath.stem.replace("-", " ").title()
+        data["title"] = fallback_slug.replace("-", " ").title()
     if not data.get("chef_notes") and body_text and not frontmatter_match:
         data["chef_notes"] = body_text
 
-    return Recipe.model_validate(data)
+    try:
+        return Recipe.model_validate(data)
+    except Exception:
+        if strict_yaml:
+            return None
+        raise
+
+
+def parse_recipe_markdown(filepath: Path) -> Recipe | None:
+    """Lee un archivo .md con YAML Frontmatter y devuelve un objeto Recipe validado."""
+    if not filepath.exists():
+        return None
+    content = filepath.read_text(encoding="utf-8")
+    return parse_recipe_markdown_text(content, fallback_slug=filepath.stem)
 
 
 def list_recipes() -> list[Recipe]:

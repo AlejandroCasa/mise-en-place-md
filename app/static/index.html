@@ -29,13 +29,39 @@
           type="button"
           data-action="toggle-kitchen-mode"
           class="btn btn-ghost"
-          title="Aumenta el tamaño de lectura, amplía controles táctiles y mantiene la pantalla activa"
+          title="Modo Cocina manos libres paso a paso con Wake Lock"
         >
           <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
             <path d="M12 3c.5 3.5-2 5.5-2 8.5a4 4 0 0 0 8 0c0-2.5-1.5-4.5-2-6-1 1.5-2 2-2 2s.5-2.5-2-4.5Z" />
             <path d="M6 15.5a6 6 0 0 0 12 0" />
           </svg>
           <span class="hide-mobile">Modo Cocina</span>
+        </button>
+
+        <button
+          type="button"
+          data-action="open-menu-planner"
+          class="btn btn-ghost"
+          title="Planificador de menú multi-plato, lista de compra y cuenta atrás"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M4 6h16M4 12h16M4 18h10" />
+            <circle cx="19" cy="18" r="2" />
+          </svg>
+          <span class="hide-mobile">Menú</span>
+        </button>
+
+        <button
+          type="button"
+          data-action="open-cellar-modal"
+          class="btn btn-ghost"
+          title="Cocina desde tu Bodega: elige una botella de Vinum Pulse y descubre recetas"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8 2h8l1 6a5 5 0 0 1-10 0L8 2Z" />
+            <path d="M12 13v8M8 21h8" />
+          </svg>
+          <span class="hide-mobile">Bodega</span>
         </button>
 
         <button
@@ -50,6 +76,18 @@
           </svg>
           <span>Equipo</span>
           <span id="header-utensil-count" class="count-chip">0/0</span>
+        </button>
+
+        <button
+          type="button"
+          data-action="open-quick-capture"
+          class="btn btn-secondary"
+          title="Inbox de captura rápida desde texto libre o Markdown"
+        >
+          <svg class="icon" viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M13 2 4 14h7l-1 8 9-12h-7l1-8Z" />
+          </svg>
+          <span class="hide-mobile">Captura</span>
         </button>
 
         <button
@@ -110,6 +148,8 @@
             data-change-action="apply-filters"
           />
         </label>
+
+        <div id="pantry-quick-bar" class="pantry-bar" aria-label="¿Qué cocino hoy?"></div>
 
         <details id="advanced-filters-box" class="filters-disclosure">
           <summary>
@@ -319,6 +359,104 @@
         <div style="display: flex; gap: 8px;">
           <button type="button" data-action="close-markdown-modal" class="btn btn-ghost btn-sm">Cancelar</button>
           <button type="button" data-action="save-markdown" class="btn btn-accent btn-sm">Guardar cambios</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Cocina desde tu Bodega (Flujo Inverso Vinum Pulse) -->
+  <div
+    id="cellar-modal"
+    class="modal-backdrop is-hidden no-print"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="cellar-modal-title"
+    data-backdrop-close="cellar-modal"
+  >
+    <div class="modal-dialog modal-dialog-wide">
+      <div class="modal-header">
+        <div>
+          <h2 id="cellar-modal-title" class="modal-title">Cocina desde tu Bodega</h2>
+          <p class="modal-subtitle">Elige una botella disponible en Vinum Pulse para descubrir las recetas más compatibles.</p>
+        </div>
+        <button type="button" data-action="close-cellar-modal" class="btn btn-ghost btn-sm" aria-label="Cerrar">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div id="cellar-modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <span>Conectado con <code class="font-mono">enology.cellar_items</code></span>
+        <button type="button" data-action="close-cellar-modal" class="btn btn-primary btn-sm">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Planificador de Menú / Servicio Multi-Plato -->
+  <div
+    id="menu-planner-modal"
+    class="modal-backdrop is-hidden no-print"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="menu-planner-title"
+    data-backdrop-close="menu-planner-modal"
+  >
+    <div class="modal-dialog modal-dialog-wide">
+      <div class="modal-header">
+        <div>
+          <h2 id="menu-planner-title" class="modal-title">Planificador de Servicio Multi-Plato</h2>
+          <p class="modal-subtitle">Explosión de DAG de sub-recetas, lista de compra agregada y cuenta atrás con decantación Vinum Pulse.</p>
+        </div>
+        <button type="button" data-action="close-menu-planner" class="btn btn-ghost btn-sm" aria-label="Cerrar">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div id="menu-planner-modal-body" class="modal-body"></div>
+      <div class="modal-footer">
+        <span>Sincronizado con sub-recetas DAG y <code class="font-mono">decant_minutes</code></span>
+        <button type="button" data-action="close-menu-planner" class="btn btn-primary btn-sm">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Inbox de Captura Rápida -->
+  <div
+    id="quick-capture-modal"
+    class="modal-backdrop is-hidden no-print"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="quick-capture-title"
+    data-backdrop-close="quick-capture-modal"
+  >
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div>
+          <h2 id="quick-capture-title" class="modal-title">Inbox de Captura Rápida</h2>
+          <p class="modal-subtitle">Pega texto libre o notas rápidas y conviértelas al instante en ficha técnica estructurada.</p>
+        </div>
+        <button type="button" data-action="close-quick-capture" class="btn btn-ghost btn-sm" aria-label="Cerrar">
+          <svg class="icon" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12" /></svg>
+        </button>
+      </div>
+      <div class="modal-body" style="display:flex;flex-direction:column;gap:12px;">
+        <div>
+          <label for="quick-capture-category" class="field-label">Categoría inicial</label>
+          <input id="quick-capture-category" list="category-suggestions" value="Principal" class="control-input" />
+        </div>
+        <div>
+          <label for="quick-capture-text" class="field-label">Texto libre o Markdown mínimo</label>
+          <textarea
+            id="quick-capture-text"
+            rows="10"
+            class="control-textarea font-mono"
+            placeholder="Tartar de Atún Rojo&#10;Ingredientes:&#10;- 300 g lomo de atún&#10;- 15 ml salsa de soja&#10;Pasos:&#10;1. Cortar en brunoise fina y macerar 10 min en frío. #atún #crudo"
+          ></textarea>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" data-action="close-quick-capture" class="btn btn-ghost btn-sm">Cancelar</button>
+        <div style="display:flex;gap:8px;">
+          <button type="button" data-action="quick-capture-preview" class="btn btn-secondary btn-sm">Abrir en editor</button>
+          <button type="button" data-action="quick-capture-save" class="btn btn-accent btn-sm">Guardar borrador</button>
         </div>
       </div>
     </div>

@@ -83,3 +83,27 @@ export async function uploadMediaFile(file) {
   formData.append("file", file);
   return fetch("/api/upload", { method: "POST", body: formData });
 }
+
+export async function fetchCellarBottles() {
+  return fetch("/api/cellar/bottles");
+}
+
+export async function fetchRecipesForCellarBottle(wineSlug) {
+  return fetch(`/api/cellar/bottles/${encodeURIComponent(wineSlug)}/recipes`);
+}
+
+export async function buildMenuPlan(courses, serviceTime) {
+  return fetch("/api/menu-plan", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ courses, service_time: serviceTime }),
+  });
+}
+
+export async function quickCaptureRecipe(rawText, category = "Principal", save = false) {
+  return fetch("/api/recipes/quick-capture", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ raw_text: rawText, category, save }),
+  });
+}

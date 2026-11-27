@@ -6,15 +6,46 @@ import * as api from "./api.js";
 import { ICONS, RESOLUTION_SOURCE_ES, WINE_TYPE_ES } from "./constants.js";
 import {
   checkRecipeEquipmentStatus,
+  computeRecipeCostMetrics,
   escapeHtml,
+  extractTopPantryTerms,
   filterAndSortRecipes,
   formatDuration,
   formatNumber,
   getBaseWeightTotal,
   getUtensilMap,
+  matchIngredientsForStep,
   sortCategoriesCanonical,
   state,
 } from "./state.js";
+
+export function renderPantryQuickBar() {
+  const bar = document.getElementById("pantry-quick-bar");
+  if (!bar) return;
+  const terms = extractTopPantryTerms(state.allRecipes, 8);
+  if (terms.length === 0) {
+    bar.innerHTML = "";
+    return;
+  }
+  bar.innerHTML = `
+    <div class="pantry-bar-head">
+      <span>¿Qué cocino hoy?</span>
+      ${
+        state.pantrySelection.size > 0
+          ? `<button type="button" data-action="clear-pantry-chips" class="pantry-clear-btn">Limpiar (${state.pantrySelection.size})</button>`
+          : `<span style="color:var(--ink-muted);">Pulsa ingredientes</span>`
+      }
+    </div>
+    <div class="pantry-chips">
+      ${terms
+        .map((term) => {
+          const active = state.pantrySelection.has(term);
+          return `<button type="button" data-action="toggle-pantry-chip" data-term="${escapeHtml(term)}" class="pantry-chip ${active ? "is-active" : ""}">${escapeHtml(term)}</button>`;
+        })
+        .join("")}
+    </div>
+  `;
+}
 
 export function updateUtensilHeaderCounter() {
   const ownedCount = state.utensilsCatalog.filter((u) => u.owned).length;
@@ -339,6 +370,13 @@ export function renderWineSuggestionSlot(slot, data) {
         <span class="vinum-heading">
           ${ICONS.wine}
           <span>Maridaje Sugerido · ${escapeHtml(wineTypeEs)}</span>
+          ${
+            wine.cellar_quantity > 0
+              ? `<span class="cellar-badge">Disponible en tu bodega: ${wine.cellar_quantity} uds.</span>`
+              : data.cellar_available_count > 0
+                ? `<span class="cellar-badge">En bodega (${escapeHtml(wineTypeEs)}): ${data.cellar_available_count} uds.</span>`
+                : ""
+          }
         </span>
         <span class="vinum-source-badge">${escapeHtml(sourceEs)} · Banda ${escapeHtml(band)}</span>
       </div>
@@ -379,7 +417,179 @@ export function renderWineSuggestionSlot(slot, data) {
       </div>
 
       ${alternativesHtml}
+
+      ${
+        data.cellar_matches && data.cellar_matches.length > 0
+          ? `
+        <div class="vinum-alts">
+          <span style="font-family: var(--font-mono); font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ready-green);">En tu bodega</span>
+          ${data.cellar_matches
+            .slice(0, 3)
+            .map(
+              (cm) => `
+            <button type="button" data-action="open-cellar-modal" class="vinum-alt-link" style="cursor:pointer;">
+              <span>${escapeHtml(cm.name)}</span>
+              <span class="font-mono" style="color: var(--ready-green);">${cm.cellar_quantity} uds.</span>
+            </button>
+          `
+            )
+            .join("")}
+        </div>
+      `
+          : ""
+      }
     </section>
+  `;
+}
+
+function renderKitchenModeStage(recipe) {
+  const steps = recipe.steps || [];
+  if (steps.length === 0) {
+    return `
+      <section class="kitchen-stage" aria-label="Modo Cocina Manos Libres">
+        <div class="kitchen-stage-head">
+          <span class="kitchen-stage-kicker">Modo Cocina · Sin pasos definidos</span>
+          <button type="button" data-action="toggle-kitchen-mode" class="btn btn-secondary kitchen-touch-btn">Salir</button>
+        </div>
+      </section>
+    `;
+  }
+
+  const clampedIdx = Math.max(0, Math.min(state.kitchenStepIndex, steps.length - 1));
+  state.kitchenStepIndex = clampedIdx;
+  const activeStep = steps[clampedIdx];
+  const isDone = state.checkedSteps.has(clampedIdx);
+  const stepLabel = activeStep.title || `Paso ${clampedIdx + 1}`;
+  const { matched, isContextual } = matchIngredientsForStep(
+    activeStep,
+    recipe.ingredients || [],
+    state.currentScaleFactor
+  );
+
+  return `
+    <section class="kitchen-stage" aria-label="Modo Cocina Manos Libres">
+      <div class="kitchen-stage-head">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+          <span class="kitchen-stage-kicker">Paso ${clampedIdx + 1} de ${steps.length}</span>
+          <span class="wake-pill ${state.wakeLockActive ? "is-locked" : ""}">
+            ${ICONS.sun}
+            <span>${state.wakeLockActive ? "Pantalla activa (Wake Lock)" : "Wake Lock no activo"}</span>
+          </span>
+        </div>
+        <button type="button" data-action="toggle-kitchen-mode" class="btn btn-secondary kitchen-touch-btn">
+          <span>Salir Modo Cocina</span>
+        </button>
+      </div>
+
+      <div class="kitchen-progress-track" aria-hidden="true">
+        <div class="kitchen-progress-fill" style="width: ${Math.round(((clampedIdx + 1) / steps.length) * 100)}%;"></div>
+      </div>
+
+      <div class="kitchen-step-grid">
+        <div class="kitchen-step-main">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px;">
+            <h2 class="kitchen-step-title">${escapeHtml(stepLabel)}</h2>
+            ${activeStep.temp_c !== null && activeStep.temp_c !== undefined ? `<span class="step-temp-pill">${activeStep.temp_c} °C</span>` : ""}
+          </div>
+          <p class="kitchen-step-instruction">${escapeHtml(activeStep.instruction)}</p>
+          ${
+            activeStep.critical_point
+              ? `<div class="step-pcc" style="margin-top:14px;"><span class="step-pcc-label">PCC</span><span>${escapeHtml(activeStep.critical_point)}</span></div>`
+              : ""
+          }
+        </div>
+
+        <aside class="kitchen-step-ingredients">
+          <div class="equipment-col-title">${isContextual ? "Ingredientes de este paso" : "Ingredientes clave"}</div>
+          <ul class="ingredient-list">
+            ${matched
+              .map(
+                (ing) => `
+              <li class="ingredient-row">
+                <span class="ingredient-name">${escapeHtml(ing.name)}</span>
+                <span class="ingredient-qty">${escapeHtml(ing.scaledAmount)} ${escapeHtml(ing.unit || "")}</span>
+              </li>
+            `
+              )
+              .join("")}
+          </ul>
+        </aside>
+      </div>
+
+      <div class="kitchen-controls-bar">
+        <button
+          type="button"
+          data-action="kitchen-prev-step"
+          class="btn btn-secondary kitchen-touch-btn"
+          ${clampedIdx === 0 ? "disabled" : ""}
+        >
+          ${ICONS.chevronLeft} <span>Anterior</span>
+        </button>
+
+        <div style="display:flex;gap:10px;flex-wrap:wrap;">
+          ${
+            activeStep.duration_minutes
+              ? `<button
+                  type="button"
+                  data-action="start-timer"
+                  data-timer-label="${escapeHtml(stepLabel)}"
+                  data-timer-minutes="${activeStep.duration_minutes}"
+                  class="btn btn-secondary kitchen-touch-btn"
+                >
+                  ${ICONS.clock} <span>Timer ${activeStep.duration_minutes} min</span>
+                </button>`
+              : ""
+          }
+          <button
+            type="button"
+            data-action="kitchen-complete-step"
+            data-index="${clampedIdx}"
+            class="btn ${isDone ? "btn-secondary" : "btn-accent"} kitchen-touch-btn"
+          >
+            ${ICONS.check} <span>${isDone ? "Completado" : "Hecho y siguiente"}</span>
+          </button>
+        </div>
+
+        <button
+          type="button"
+          data-action="kitchen-next-step"
+          class="btn btn-primary kitchen-touch-btn"
+          ${clampedIdx >= steps.length - 1 ? "disabled" : ""}
+        >
+          <span>Siguiente</span> ${ICONS.chevronRightLg}
+        </button>
+      </div>
+    </section>
+  `;
+}
+
+export function renderCostingStripHtml(recipe) {
+  const wineSuggestion = state.wineSuggestionCache.get(recipe.id) || null;
+  const cost = computeRecipeCostMetrics(recipe, wineSuggestion, state.currentScaleFactor);
+  if (cost.foodTotal === null && cost.winePrice === null) {
+    return "";
+  }
+  return `
+    <div class="costing-strip" aria-label="Escandallo económico por comensal">
+      <div class="costing-cell">
+        <span class="telemetry-label">Escandallo ingredientes</span>
+        <span class="costing-value">${cost.foodTotal !== null ? `${formatNumber(cost.foodTotal)} €` : "Sin costes"}</span>
+        <span class="telemetry-note">${cost.pricedCount}/${cost.totalIngredients} con precio</span>
+      </div>
+      <div class="costing-cell">
+        <span class="telemetry-label">Plato / ración</span>
+        <span class="costing-value">${cost.foodPerServing !== null ? `${formatNumber(cost.foodPerServing)} €` : "N/D"}</span>
+      </div>
+      <div class="costing-cell">
+        <span class="telemetry-label">Vino Vinum Pulse / rac.</span>
+        <span class="costing-value">${cost.winePerServing !== null ? `${formatNumber(cost.winePerServing)} €` : "N/D"}</span>
+        ${cost.winePrice !== null ? `<span class="telemetry-note">Botella ${formatNumber(cost.winePrice)} €</span>` : ""}
+      </div>
+      <div class="costing-cell">
+        <span class="telemetry-label">Total menú + vino / com.</span>
+        <span class="costing-value accent">${cost.totalPerGuest !== null ? `${formatNumber(cost.totalPerGuest)} €` : "N/D"}</span>
+      </div>
+    </div>
   `;
 }
 
@@ -499,6 +709,10 @@ export function renderRecipeDetail(recipe) {
       </header>
 
       <div id="vinum-pairing-slot"></div>
+
+      <div id="recipe-costing-slot">${renderCostingStripHtml(recipe)}</div>
+
+      ${state.kitchenModeActive ? renderKitchenModeStage(recipe) : ""}
 
       <div class="sheet-body-grid">
         <div style="display: flex; flex-direction: column; gap: 28px;">
@@ -798,6 +1012,16 @@ export function renderRecipeDetail(recipe) {
                 <label for="quick-it-next" class="field-label">Hipótesis para la siguiente prueba</label>
                 <input id="quick-it-next" type="text" placeholder="Ej. Reducir sal un 0.2%..." class="control-input" />
               </div>
+              <div>
+                <label for="quick-it-photo" class="field-label">Foto de iteración (opcional)</label>
+                <div style="display:flex;gap:8px;align-items:center;">
+                  <input id="quick-it-photo" type="text" placeholder="/media/prueba.webp" class="control-input font-mono" />
+                  <label class="btn btn-secondary btn-sm" style="cursor:pointer;height:33px;">
+                    ${ICONS.upload} <span>Subir</span>
+                    <input type="file" accept="image/*" class="is-hidden" data-change-action="upload-quick-it-photo" />
+                  </label>
+                </div>
+              </div>
               <div style="display: flex; justify-content: flex-end; gap: 8px;">
                 <button type="button" data-action="toggle-quick-iteration" class="btn btn-ghost btn-sm">Cancelar</button>
                 <button type="button" data-action="save-quick-iteration" data-recipe-id="${escapeHtml(recipe.id)}" class="btn btn-accent btn-sm">Guardar nota</button>
@@ -808,6 +1032,11 @@ export function renderRecipeDetail(recipe) {
               !recipe.iterations || recipe.iterations.length === 0
                 ? `<p style="font-size: 13px; color: var(--ink-tertiary);">Sin iteraciones registradas todavía.</p>`
                 : `
+              ${
+                recipe.iterations.length >= 2
+                  ? renderIterationComparisonHtml(recipe.iterations)
+                  : ""
+              }
               <div>
                 ${recipe.iterations
                   .map(
@@ -819,6 +1048,7 @@ export function renderRecipeDetail(recipe) {
                     </div>
                     <p style="font-size: 13px; color: var(--ink-primary);">${escapeHtml(it.changes)}</p>
                     ${it.next_steps ? `<p class="iteration-next">Siguiente ajuste: ${escapeHtml(it.next_steps)}</p>` : ""}
+                    ${it.photo ? `<img src="${escapeHtml(it.photo)}" alt="Iteración ${escapeHtml(it.version)}" class="step-photo" style="margin-top:8px;" />` : ""}
                   </div>
                 `
                   )
@@ -990,6 +1220,55 @@ export function renderRecipeDetail(recipe) {
       state.wineSuggestionCache.get(recipe.id)
     );
   }
+}
+
+function renderIterationComparisonHtml(iterations) {
+  const idxA = Math.max(0, Math.min(state.iterationCompareA, iterations.length - 1));
+  const idxB = Math.max(0, Math.min(state.iterationCompareB, iterations.length - 1));
+  const itA = iterations[idxA];
+  const itB = iterations[idxB];
+  const optionsHtml = (selectedIdx) =>
+    iterations
+      .map(
+        (it, i) =>
+          `<option value="${i}" ${i === selectedIdx ? "selected" : ""}>${escapeHtml(it.version)} (${escapeHtml(it.date)})</option>`
+      )
+      .join("");
+
+  return `
+    <div class="rd-compare-box no-print">
+      <div class="rd-compare-head">
+        <span style="display:flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:var(--ink-secondary);">
+          ${ICONS.compare} <span>Comparar versiones</span>
+        </span>
+        <div style="display:flex;gap:8px;align-items:center;">
+          <select data-change-action="compare-iter-a" class="control-select font-mono" style="width:auto;" aria-label="Versión base">${optionsHtml(idxA)}</select>
+          <span style="font-size:11px;color:var(--ink-tertiary);">vs</span>
+          <select data-change-action="compare-iter-b" class="control-select font-mono" style="width:auto;" aria-label="Versión comparada">${optionsHtml(idxB)}</select>
+        </div>
+      </div>
+      <div class="rd-compare-grid">
+        <div class="rd-compare-col">
+          <div class="iteration-head">
+            <span class="meta-pill">${escapeHtml(itA.version)}</span>
+            <span class="font-mono" style="font-size:11px;color:var(--ink-tertiary);">${escapeHtml(itA.date)}</span>
+          </div>
+          <p style="font-size:12.5px;">${escapeHtml(itA.changes)}</p>
+          ${itA.next_steps ? `<p class="iteration-next">Hipótesis: ${escapeHtml(itA.next_steps)}</p>` : ""}
+          ${itA.photo ? `<img src="${escapeHtml(itA.photo)}" alt="${escapeHtml(itA.version)}" class="step-photo" style="margin-top:6px;" />` : ""}
+        </div>
+        <div class="rd-compare-col">
+          <div class="iteration-head">
+            <span class="meta-pill meta-pill-dark">${escapeHtml(itB.version)}</span>
+            <span class="font-mono" style="font-size:11px;color:var(--ink-tertiary);">${escapeHtml(itB.date)}</span>
+          </div>
+          <p style="font-size:12.5px;">${escapeHtml(itB.changes)}</p>
+          ${itB.next_steps ? `<p class="iteration-next">Hipótesis: ${escapeHtml(itB.next_steps)}</p>` : ""}
+          ${itB.photo ? `<img src="${escapeHtml(itB.photo)}" alt="${escapeHtml(itB.version)}" class="step-photo" style="margin-top:6px;" />` : ""}
+        </div>
+      </div>
+    </div>
+  `;
 }
 
 export function openUtensilsModal() {

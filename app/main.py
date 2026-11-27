@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import shutil
-import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -16,14 +14,23 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sqlalchemy import text
 
+from app.capture import parse_quick_capture_text
+from app.costing import build_recipe_cost_summary
 from app.database import SessionLocal, engine, settings
 from app.models import (
+    CellarBottleRecipesResponse,
+    CellarBottleSummary,
     DishRecipeLinkRequest,
     DishRecipeLinkResponse,
+    MenuPlanRequest,
+    MenuPlanResponse,
+    QuickCaptureRequest,
     Recipe,
+    RecipeCostSummary,
     RecipeWineSuggestion,
     UtensilCatalogItem,
 )
+from app.observability import RequestContextMiddleware
 from app.repository import RecipeRepository, RecipeSortBy, SubrecipeCycleError, safe_media_filename
 from app.seed import seed_initial_data
 from app.storage import (
@@ -31,9 +38,10 @@ from app.storage import (
     MEDIA_DIR,
     RECIPES_DIR,
     ensure_directories,
-    parse_recipe_markdown,
+    parse_recipe_markdown_text,
     render_recipe_markdown,
 )
+from app.upload_security import process_image_upload
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 repository = RecipeRepository(session_factory=SessionLocal)
@@ -58,11 +66,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+app.add_middleware(RequestContextMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "Authorization"],
+    allow_headers=["Content-Type", "Authorization", "X-Request-ID"],
+    expose_headers=["X-Request-ID"],
 )
 
 
@@ -162,16 +172,12 @@ def api_get_recipe_markdown(recipe_id: str) -> str:
 
 @app.put("/api/recipes/{recipe_id}/markdown", response_model=Recipe)
 def api_put_recipe_markdown(recipe_id: str, payload: RawMarkdownPayload) -> Recipe:
-    """Import/update a recipe from raw Markdown + YAML frontmatter into PostgreSQL."""
-    tmp_path = RECIPES_DIR / f".import-{uuid.uuid4().hex[:8]}.md"
-    try:
-        ensure_directories()
-        tmp_path.write_text(payload.content, encoding="utf-8")
-        parsed = parse_recipe_markdown(tmp_path)
-    finally:
-        if tmp_path.exists():
-            tmp_path.unlink()
-
+    """Import/update a recipe from raw Markdown + YAML frontmatter in memory into PostgreSQL."""
+    parsed = parse_recipe_markdown_text(
+        payload.content,
+        fallback_slug=recipe_id,
+        strict_yaml=True,
+    )
     if parsed is None:
         raise HTTPException(status_code=400, detail="No se pudo parsear el archivo Markdown")
     if not parsed.id:
@@ -227,6 +233,58 @@ def api_link_dish_to_recipe(payload: DishRecipeLinkRequest) -> DishRecipeLinkRes
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
 
+@app.get("/api/cellar/bottles", response_model=list[CellarBottleSummary])
+def api_list_cellar_bottles() -> list[CellarBottleSummary]:
+    """List bottles currently available in enology.cellar_items."""
+    return repository.list_cellar_bottles(settings.vinum_pulse_base_url)
+
+
+@app.get("/api/cellar/bottles/{wine_slug}/recipes", response_model=CellarBottleRecipesResponse)
+def api_match_recipes_for_cellar_bottle(wine_slug: str) -> CellarBottleRecipesResponse:
+    """Suggest recipes compatible with a bottle chosen from the user's cellar."""
+    result = repository.match_recipes_for_cellar_bottle(
+        wine_slug=wine_slug,
+        vinum_base_url=settings.vinum_pulse_base_url,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Vino o botella no encontrada en bodega")
+    return result
+
+
+@app.post("/api/menu-plan", response_model=MenuPlanResponse)
+def api_build_menu_plan(payload: MenuPlanRequest) -> MenuPlanResponse:
+    """Generate a multi-course dinner service plan with DAG shopping list & decant timeline."""
+    try:
+        return repository.build_menu_plan(payload, settings.vinum_pulse_base_url)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@app.get("/api/recipes/{recipe_id}/cost", response_model=RecipeCostSummary)
+def api_get_recipe_cost(recipe_id: str) -> RecipeCostSummary:
+    """Compute food costing and combined dish+wine cost per serving."""
+    recipe = repository.get_recipe(recipe_id)
+    if recipe is None:
+        raise HTTPException(status_code=404, detail="Receta no encontrada")
+    paired_price: float | None = None
+    try:
+        suggestion = repository.suggest_wine_for_recipe(recipe_id, settings.vinum_pulse_base_url)
+        if suggestion is not None:
+            paired_price = suggestion.recommended_wine.price_eur
+    except ValueError:
+        paired_price = None
+    return build_recipe_cost_summary(recipe, paired_wine_price_eur=paired_price)
+
+
+@app.post("/api/recipes/quick-capture", response_model=Recipe)
+def api_quick_capture_recipe(payload: QuickCaptureRequest) -> Recipe:
+    """Parse freeform text or minimal Markdown into a draft Recipe (and optionally save)."""
+    draft = parse_quick_capture_text(payload.raw_text, default_category=payload.category)
+    if payload.save:
+        return repository.save_recipe(draft)
+    return draft
+
+
 @app.get("/api/utensils", response_model=list[UtensilCatalogItem])
 def api_list_utensils() -> list[UtensilCatalogItem]:
     """List kitchen utensils catalog."""
@@ -246,15 +304,22 @@ def api_upsert_utensil(item: UtensilCatalogItem) -> UtensilCatalogItem:
 
 
 @app.post("/api/upload")
-async def api_upload_image(file: UploadFile = File(...)) -> dict[str, str]:  # noqa: B008
-    """Store an uploaded recipe image safely in local media directory."""
+async def api_upload_image(file: UploadFile = File(...)) -> dict[str, Any]:  # noqa: B008
+    """Validate magic bytes & size, strip EXIF, convert to WebP, and store in media directory."""
     ensure_directories()
-    safe_stem, ext = safe_media_filename(file.filename or "foto.jpg")
-    unique_name = f"{safe_stem}-{uuid.uuid4().hex[:8]}{ext}"
-    dest_path = MEDIA_DIR / unique_name
-    with dest_path.open("wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
-    return {"url": f"/media/{unique_name}", "filename": unique_name}
+    safe_stem, _ = safe_media_filename(file.filename or "foto.jpg")
+    stored = await process_image_upload(
+        file=file,
+        media_dir=MEDIA_DIR,
+        safe_stem=safe_stem,
+        max_bytes=settings.max_upload_bytes,
+    )
+    return {
+        "url": stored.url,
+        "filename": stored.filename,
+        "mime_type": stored.mime_type,
+        "size_bytes": stored.size_bytes,
+    }
 
 
 @app.get("/api/info")

@@ -1976,3 +1976,348 @@ body.kitchen-mode .preset-btn {
     border: 1px solid #cccccc;
   }
 }
+
+/* ============================================================================
+   W48 P1 & P2 Additions: Pantry Bar, Cellar, Planner, Kitchen Stage & Costing
+   ============================================================================ */
+.pantry-bar {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px 10px;
+  background-color: var(--recessed-well);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+}
+
+.pantry-bar-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--ink-secondary);
+}
+
+.pantry-clear-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  font-size: 11px;
+  color: var(--flame-blue);
+  cursor: pointer;
+}
+
+.pantry-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.pantry-chip {
+  border: 1px solid var(--hairline);
+  background-color: var(--pass-surface);
+  color: var(--ink-secondary);
+  border-radius: 999px;
+  padding: 3px 9px;
+  font-size: 11px;
+  cursor: pointer;
+  transition: background-color 140ms var(--ease-out), border-color 140ms var(--ease-out);
+}
+
+.pantry-chip.is-active {
+  background-color: var(--flame-blue);
+  border-color: var(--flame-blue);
+  color: #ffffff;
+}
+
+.cellar-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  background-color: var(--ready-tint);
+  color: var(--ready-green);
+  border: 1px solid var(--ready-border);
+}
+
+.costing-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background-color: var(--steel-canvas);
+  overflow: hidden;
+}
+
+.costing-cell {
+  padding: 10px 14px;
+  border-right: 1px solid var(--hairline-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.costing-cell:last-child {
+  border-right: none;
+}
+
+.costing-value {
+  font-family: var(--font-mono);
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink-primary);
+}
+
+.costing-value.accent {
+  color: var(--flame-blue);
+}
+
+/* Hands-Free Kitchen Mode Stage (48px+ touch targets) */
+body.kitchen-mode .recipe-rail {
+  display: none;
+}
+
+body.kitchen-mode .workbench-shell {
+  grid-template-columns: 1fr;
+}
+
+body.kitchen-mode .sheet-body-grid,
+body.kitchen-mode .telemetry-strip,
+body.kitchen-mode #vinum-pairing-slot,
+body.kitchen-mode #recipe-costing-slot {
+  display: none;
+}
+
+.kitchen-stage {
+  border: 2px solid var(--flame-blue-border);
+  border-radius: var(--radius-lg);
+  background-color: var(--pass-surface);
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.kitchen-stage-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.kitchen-stage-kicker {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--flame-blue);
+}
+
+.wake-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  background-color: var(--recessed-well);
+  color: var(--ink-secondary);
+  border: 1px solid var(--hairline);
+}
+
+.wake-pill.is-locked {
+  background-color: var(--ready-tint);
+  color: var(--ready-green);
+  border-color: var(--ready-border);
+}
+
+.kitchen-progress-track {
+  height: 6px;
+  border-radius: 999px;
+  background-color: var(--recessed-well);
+  overflow: hidden;
+}
+
+.kitchen-progress-fill {
+  height: 100%;
+  background-color: var(--flame-blue);
+  transition: width 200ms var(--ease-out);
+}
+
+.kitchen-step-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr);
+  gap: 24px;
+  align-items: start;
+}
+
+.kitchen-step-title {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 600;
+  color: var(--ink-primary);
+}
+
+.kitchen-step-instruction {
+  font-size: 20px;
+  line-height: 1.6;
+  color: var(--ink-primary);
+}
+
+.kitchen-step-ingredients {
+  padding: 16px;
+  border-radius: var(--radius-md);
+  background-color: var(--steel-canvas);
+  border: 1px solid var(--hairline);
+}
+
+.kitchen-controls-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  border-top: 1px solid var(--hairline);
+}
+
+.kitchen-touch-btn {
+  min-height: 48px;
+  min-width: 110px;
+  padding: 10px 18px;
+  font-size: 15px;
+}
+
+/* Cellar Reverse Modal & Menu Planner Modal */
+.cellar-split-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.35fr);
+  gap: 20px;
+}
+
+.cellar-bottle-btn {
+  text-align: left;
+  width: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  background-color: var(--steel-canvas);
+  cursor: pointer;
+}
+
+.cellar-bottle-btn.is-selected {
+  border-color: var(--vinum-burgundy);
+  background-color: var(--vinum-tint);
+}
+
+.cellar-match-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-sm);
+  background-color: var(--pass-surface);
+}
+
+.planner-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background-color: var(--steel-canvas);
+  border: 1px solid var(--hairline);
+}
+
+.planner-result-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 20px;
+}
+
+.timeline-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.timeline-row {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  background-color: var(--pass-surface);
+}
+
+.timeline-row.timeline-wine_decant,
+.timeline-row.timeline-wine_chill {
+  border-color: var(--vinum-border);
+  background-color: var(--vinum-tint);
+}
+
+.timeline-clock {
+  min-width: 72px;
+  display: flex;
+  flex-direction: column;
+  font-size: 12px;
+  color: var(--flame-blue);
+}
+
+.timeline-clock span {
+  font-size: 10.5px;
+  color: var(--ink-tertiary);
+}
+
+.rd-compare-box {
+  margin-bottom: 14px;
+  padding: 12px;
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius-md);
+  background-color: var(--steel-canvas);
+}
+
+.rd-compare-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.rd-compare-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.rd-compare-col {
+  padding: 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--hairline);
+  background-color: var(--pass-surface);
+}
+
+@media (max-width: 820px) {
+  .costing-strip,
+  .kitchen-step-grid,
+  .cellar-split-grid,
+  .planner-result-grid,
+  .rd-compare-grid {
+    grid-template-columns: 1fr;
+  }
+}

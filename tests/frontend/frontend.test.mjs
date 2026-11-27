@@ -7,14 +7,17 @@ import { fileURLToPath } from "node:url";
 import {
   buildRecipeQueryParams,
   checkRecipeEquipmentStatus,
+  computeRecipeCostMetrics,
   computeScaleFactorFromBaseWeight,
   computeScaleFactorFromServings,
   escapeHtml,
   extractSlugFromPath,
+  extractTopPantryTerms,
   filterAndSortRecipes,
   formatDuration,
   formatNumber,
   getBaseWeightTotal,
+  matchIngredientsForStep,
   sortCategoriesCanonical,
 } from "../../app/static/js/state.js";
 import { createTimerEntry, tickTimers } from "../../app/static/js/timers.js";
@@ -171,4 +174,43 @@ test("static HTML and ES modules contain zero inline event handler attributes", 
     );
   }
   assert.equal(fs.existsSync(path.join(STATIC_DIR, "app.js")), false, "Legacy monolithic app.js should be removed");
+});
+
+test("kitchen step ingredient matcher, food costing, and pantry term extractor work accurately", () => {
+  const recipe = {
+    servings: 4,
+    ingredients: [
+      { name: "Carrillera de cerdo", amount: 800, unit: "g", unit_cost_eur: 14.0 },
+      { name: "Vino tinto crianza", amount: 500, unit: "ml", unit_cost_eur: 8.0 },
+      { name: "Mantequilla", amount: 50, unit: "g", unit_cost_eur: null },
+    ],
+    steps: [
+      { order: 1, title: "Sellado", instruction: "Dorar la carrillera en cocotte." },
+    ],
+  };
+
+  const stepMatch = matchIngredientsForStep(recipe.steps[0], recipe.ingredients, 1.5);
+  assert.equal(stepMatch.isContextual, true);
+  assert.equal(stepMatch.matched.length, 1);
+  assert.equal(stepMatch.matched[0].name, "Carrillera de cerdo");
+  assert.equal(stepMatch.matched[0].scaledAmount, "1200");
+
+  const cost = computeRecipeCostMetrics(
+    recipe,
+    { recommended_wine: { price_eur: 24.0 } },
+    1.0
+  );
+  // 0.8 * 14 + 0.5 * 8 = 11.2 + 4.0 = 15.2 EUR food; /4 = 3.8 EUR; wine /4 = 6.0 EUR -> 9.8 EUR
+  assert.equal(cost.foodTotal, 15.2);
+  assert.equal(cost.foodPerServing, 3.8);
+  assert.equal(cost.winePerServing, 6);
+  assert.equal(cost.totalPerGuest, 9.8);
+
+  const terms = extractTopPantryTerms([
+    { is_subrecipe: false, ingredients: [{ name: "Carrillera ibérica" }, { name: "Boletus edulis" }] },
+    { is_subrecipe: false, ingredients: [{ name: "Carrillera de ternera" }] },
+    { is_subrecipe: true, ingredients: [{ name: "Huesos" }] },
+  ]);
+  assert.equal(terms[0], "carrillera");
+  assert.equal(terms.includes("huesos"), false);
 });

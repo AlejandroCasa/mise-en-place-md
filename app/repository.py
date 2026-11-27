@@ -26,11 +26,15 @@ from app.db_models import (
     WineRecord,
 )
 from app.models import (
+    CellarBottleRecipesResponse,
+    CellarBottleSummary,
     DishRecipeLinkRequest,
     DishRecipeLinkResponse,
     GalleryPhoto,
     Ingredient,
     IterationEntry,
+    MenuPlanRequest,
+    MenuPlanResponse,
     Recipe,
     RecipeStep,
     RecipeUtensil,
@@ -41,6 +45,18 @@ from app.models import (
     UtensilCatalogItem,
     WineSuggestionItem,
 )
+from app.pairing_cellar import (
+    find_compatible_cellar_wines,
+    load_cellar_stock_map,
+    wine_record_to_suggestion,
+)
+from app.pairing_cellar import (
+    list_cellar_bottles as fetch_cellar_bottles,
+)
+from app.pairing_cellar import (
+    match_recipes_for_bottle as compute_bottle_recipe_matches,
+)
+from app.planner import build_multi_course_plan
 from app.storage import (
     list_recipes as list_markdown_recipes,
 )
@@ -327,6 +343,7 @@ def _record_to_recipe(record: RecipeRecord) -> Recipe:
                 unit=ing.unit,
                 group=ing.ingredient_group,
                 is_base_weight=ing.is_base_weight,
+                unit_cost_eur=float(ing.unit_cost_eur) if ing.unit_cost_eur is not None else None,
                 notes=ing.notes,
             )
             for ing in record.ingredients
@@ -355,21 +372,7 @@ def _record_to_utensil(record: UtensilRecord) -> UtensilCatalogItem:
 
 def _wine_to_suggestion(wine: WineRecord, vinum_base_url: str) -> WineSuggestionItem:
     """Map an enology.wines row to a WineSuggestionItem with deep-link URL."""
-    base = vinum_base_url.rstrip("/")
-    return WineSuggestionItem(
-        slug=wine.slug,
-        name=wine.name,
-        winery=wine.winery,
-        appellation=wine.appellation,
-        country=wine.country,
-        wine_type=wine.wine_type,
-        vintage=wine.vintage,
-        price_eur=float(wine.price_eur),
-        serving_temp_c=float(wine.serving_temp_c),
-        glass_type=wine.glass_type,
-        tagline=wine.tagline,
-        vinum_url=f"{base}/#carte?wine={wine.slug}",
-    )
+    return wine_record_to_suggestion(wine, vinum_base_url)
 
 
 def _percentile(sorted_values: list[float], pct: float) -> float:
@@ -788,6 +791,7 @@ class RecipeRepository:
                     unit=ing.unit,
                     ingredient_group=ing.group or "Principal",
                     is_base_weight=ing.is_base_weight,
+                    unit_cost_eur=_to_decimal(ing.unit_cost_eur),
                     notes=ing.notes,
                 )
             )
@@ -1095,6 +1099,13 @@ class RecipeRepository:
 
             primary = ranked[0]
             alternatives = ranked[1:3]
+            stock_map = load_cellar_stock_map(session)
+            cellar_count, cellar_matches = find_compatible_cellar_wines(
+                session=session,
+                dominant_type=dominant_type,
+                target_sensory=target_sensory,
+                vinum_base_url=vinum_base_url,
+            )
             label_es = WINE_TYPE_LABELS_ES.get(dominant_type, dominant_type)
             kw_note = (
                 f" a partir de coincidencias culinarias ({', '.join(matched_keywords[:5])})"
@@ -1115,11 +1126,43 @@ class RecipeRepository:
                 resolution_source=source,
                 median_price_eur=median_price,
                 mid_price_band_eur=(p35, p65),
-                recommended_wine=_wine_to_suggestion(primary, vinum_base_url),
-                alternatives=[_wine_to_suggestion(alt, vinum_base_url) for alt in alternatives],
+                recommended_wine=wine_record_to_suggestion(
+                    primary, vinum_base_url, cellar_entry=stock_map.get(primary.slug)
+                ),
+                alternatives=[
+                    wine_record_to_suggestion(
+                        alt, vinum_base_url, cellar_entry=stock_map.get(alt.slug)
+                    )
+                    for alt in alternatives
+                ],
                 matched_keywords=matched_keywords,
                 rationale=rationale,
+                cellar_available_count=cellar_count,
+                cellar_matches=cellar_matches,
             )
+
+    def list_cellar_bottles(self, vinum_base_url: str) -> list[CellarBottleSummary]:
+        """List available cellar bottles from enology.cellar_items."""
+        with self._session_factory() as session:
+            return fetch_cellar_bottles(session, vinum_base_url)
+
+    def match_recipes_for_cellar_bottle(
+        self,
+        wine_slug: str,
+        vinum_base_url: str,
+    ) -> CellarBottleRecipesResponse | None:
+        """Rank compatible recipes for a bottle stored in enology.cellar_items."""
+        with self._session_factory() as session:
+            return compute_bottle_recipe_matches(session, wine_slug, vinum_base_url)
+
+    def build_menu_plan(
+        self,
+        payload: MenuPlanRequest,
+        vinum_base_url: str,
+    ) -> MenuPlanResponse:
+        """Build a multi-course dinner service plan with DAG explosion & decanting timeline."""
+        with self._session_factory() as session:
+            return build_multi_course_plan(session, self, payload, vinum_base_url)
 
 
 def safe_media_filename(raw_filename: str) -> tuple[str, str]:

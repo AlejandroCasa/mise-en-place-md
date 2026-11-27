@@ -122,6 +122,7 @@ class RecipeIngredientRecord(Base):
     unit: Mapped[str] = mapped_column(Text, default="g", nullable=False)
     ingredient_group: Mapped[str] = mapped_column(Text, default="Principal", nullable=False)
     is_base_weight: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    unit_cost_eur: Mapped[Decimal | None] = mapped_column(Numeric(10, 4), nullable=True)
     notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
     recipe: Mapped[RecipeRecord] = relationship(back_populates="ingredients")
@@ -221,6 +222,31 @@ class WineRecord(Base):
     oak: Mapped[Decimal] = mapped_column(Numeric(4, 2), nullable=False)
     tasting_notes: Mapped[str] = mapped_column(Text, nullable=False)
     tagline: Mapped[str] = mapped_column(Text, default="", nullable=False)
+
+
+class CellarItemRecord(Base):
+    """Read model for Vinum Pulse personal cellar bottles in enology.cellar_items."""
+
+    __tablename__ = "cellar_items"
+    __table_args__ = (
+        UniqueConstraint("user_id", "wine_slug", name="uq_cellar_user_wine"),
+        {"schema": "enology"},
+    )
+
+    id: Mapped[str] = mapped_column(Text, primary_key=True)
+    user_id: Mapped[str] = mapped_column(Text, default="sommelier", nullable=False)
+    wine_slug: Mapped[str] = mapped_column(
+        Text,
+        ForeignKey("enology.wines.slug", ondelete="RESTRICT"),
+        nullable=False,
+        index=True,
+    )
+    quantity: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    purchase_price_eur: Mapped[Decimal] = mapped_column(
+        Numeric(10, 2), default=Decimal("0.00"), nullable=False
+    )
+    storage_location: Mapped[str] = mapped_column(Text, default="Bodega Principal", nullable=False)
+    notes: Mapped[str] = mapped_column(Text, default="", nullable=False)
 
 
 class DishRecord(Base):
